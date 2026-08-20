@@ -118,6 +118,15 @@ function requiredString(body: Record<string, unknown>, key: string, max = 500) {
   return value.trim();
 }
 
+function optionalString(body: Record<string, unknown>, key: string, max = 500) {
+  const value = body[key];
+  if (value === undefined || value === null || value === '') return undefined;
+  if (typeof value !== 'string' || value.trim().length === 0 || value.length > max) {
+    throw new HttpError(400, `${key} must be a string`, 'INVALID_INPUT');
+  }
+  return value.trim();
+}
+
 function requiredSecret(body: Record<string, unknown>, key: string, max = 256) {
   const value = body[key];
   if (typeof value !== 'string' || value.length === 0 || value.length > max) {
@@ -294,6 +303,9 @@ function listingFromRow(row: Record<string, unknown>) {
     productId:row.product_id,
     url:row.url,
     retailer:row.retailer,
+    expectedCurrency:row.expected_currency,
+    marketCountry:row.market_country,
+    locale:row.locale,
     health:row.health,
     currentPrice:row.current_price === null ? null : Number(row.current_price),
     currentCurrency:row.current_currency,
@@ -465,7 +477,7 @@ export function createApiServer(options: ApiServerOptions) {
         const workspaceId = decodeURIComponent(productListingCollection[1]);
         const productId = decodeURIComponent(productListingCollection[2]);
         await requireMembership(pool, actor.user.id, workspaceId);
-        const product = await pool.query('SELECT id FROM products WHERE id=$1 AND workspace_id=$2', [productId,workspaceId]);
+        const product = await pool.query<{id:string;currency:string}>('SELECT id,currency FROM products WHERE id=$1 AND workspace_id=$2', [productId,workspaceId]);
         if (product.rowCount !== 1) throw new HttpError(404, 'Product not found', 'NOT_FOUND');
         if (method === 'GET') {
           url.searchParams.set('productId', productId);
@@ -473,9 +485,22 @@ export function createApiServer(options: ApiServerOptions) {
           const body = await readJson(req);
           const listingUrl = validateHttpUrl(requiredString(body, 'url', 4000));
           const retailer = requiredString(body, 'retailer', 250);
+          const expectedCurrency = (optionalString(body, 'expectedCurrency', 3) ?? product.rows[0].currency).toUpperCase();
+          if (!/^[A-Z]{3}$/.test(expectedCurrency)) throw new HttpError(400, 'expectedCurrency must be a 3-letter code', 'INVALID_INPUT');
+          const marketCountryRaw = optionalString(body, 'marketCountry', 2);
+          const marketCountry = marketCountryRaw?.toUpperCase();
+          if (marketCountry && !/^[A-Z]{2}$/.test(marketCountry)) throw new HttpError(400, 'marketCountry must be a 2-letter country code', 'INVALID_INPUT');
+          const locale = optionalString(body, 'locale', 35);
+          if (locale && !/^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$/.test(locale)) throw new HttpError(400, 'locale is invalid', 'INVALID_INPUT');
           const id = `lst_${randomUUID()}`;
-          await pool.query('INSERT INTO competitor_listings(id,workspace_id,product_id,url,retailer) VALUES($1,$2,$3,$4,$5)', [id,workspaceId,productId,listingUrl,retailer]);
-          return json(res, 201, { listing:{ id,workspaceId,productId,url:listingUrl,retailer,health:'STALE' } });
+          await pool.query(`
+            INSERT INTO competitor_listings(id,workspace_id,product_id,url,retailer,expected_currency,market_country,locale)
+            VALUES($1,$2,$3,$4,$5,$6,$7,$8)
+          `, [id,workspaceId,productId,listingUrl,retailer,expectedCurrency,marketCountry ?? null,locale ?? null]);
+          return json(res, 201, { listing:{
+            id,workspaceId,productId,url:listingUrl,retailer,expectedCurrency,
+            marketCountry:marketCountry ?? null,locale:locale ?? null,health:'STALE',
+          } });
         }
       }
 
@@ -496,7 +521,8 @@ export function createApiServer(options: ApiServerOptions) {
         }
         if (retailer) { values.push(retailer); conditions.push(`l.retailer ILIKE '%' || $${values.length} || '%'`); }
         const rows = await pool.query(`
-          SELECT l.id,l.product_id,l.url,l.retailer,l.health,l.current_price::text,l.current_currency,l.current_stock_status,
+          SELECT l.id,l.product_id,l.url,l.retailer,l.expected_currency,l.market_country,l.locale,
+            l.health,l.current_price::text,l.current_currency,l.current_stock_status,
             l.last_crawl_at,l.last_successful_crawl_at,l.failure_count,l.last_failure_code,
             latest.source_method,latest.confidence::text
           FROM competitor_listings l
@@ -517,7 +543,8 @@ export function createApiServer(options: ApiServerOptions) {
         const listingId = decodeURIComponent(listingRoute[2]);
         await requireMembership(pool, actor.user.id, workspaceId);
         const result = await pool.query(`
-          SELECT l.id,l.product_id,l.url,l.retailer,l.health,l.current_price::text,l.current_currency,l.current_stock_status,
+          SELECT l.id,l.product_id,l.url,l.retailer,l.expected_currency,l.market_country,l.locale,
+            l.health,l.current_price::text,l.current_currency,l.current_stock_status,
             l.last_crawl_at,l.last_successful_crawl_at,l.failure_count,l.last_failure_code,
             latest.source_method,latest.confidence::text
           FROM competitor_listings l
@@ -589,11 +616,8 @@ export function createApiServer(options: ApiServerOptions) {
         const workspaceId = decodeURIComponent(crawlRoute[1]);
         const listingId = decodeURIComponent(crawlRoute[2]);
         await requireMembership(pool, actor.user.id, workspaceId);
-        const result = await pool.query<{product_id:string;url:string}>(
-          'SELECT product_id,url FROM competitor_listings WHERE id=$1 AND workspace_id=$2', [listingId,workspaceId],
-        );
-        const listing = result.rows[0];
-        if (!listing) throw new HttpError(404, 'Listing not found', 'NOT_FOUND');
+        const exists = await pool.query('SELECT 1 FROM competitor_listings WHERE id=$1 AND workspace_id=$2', [listingId,workspaceId]);
+        if (exists.rowCount !== 1) throw new HttpError(404, 'Listing not found', 'NOT_FOUND');
         const crawlRunId = `run_${randomUUID()}`;
         const jobKey = `manual:${listingId}:${crawlRunId}`;
         await pool.query(`
@@ -601,7 +625,7 @@ export function createApiServer(options: ApiServerOptions) {
           VALUES($1,$2,$3,$4,'QUEUED',0,NULL)
         `, [crawlRunId,jobKey,workspaceId,listingId]);
         try {
-          const job = await enqueueCrawl(queue, { workspaceId,productId:listing.product_id,listingId,url:listing.url,crawlRunId,jobKey });
+          const job = await enqueueCrawl(queue, { workspaceId,listingId,crawlRunId,jobKey });
           return json(res, 202, { crawl:{ crawlRunId,jobKey,queueJobId:job.id,status:'RUNNING' } });
         } catch (error) {
           await pool.query(`
