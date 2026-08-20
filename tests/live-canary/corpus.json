@@ -32,13 +32,13 @@
     "retailer": "Best Buy",
     "url": "https://www.bestbuy.com/site/sony-wh1000xm5-wireless-noise-canceling-over-the-ear-headphones-black/6505727.p",
     "expectedAdapter": "bestbuy",
-    "preferredFallback": "APPROVED_API"
+    "preferredFallback": "MANUAL_REVIEW"
   },
   {
     "id": "bestbuy-airpods-pro-2",
     "retailer": "Best Buy",
     "url": "https://www.bestbuy.com/site/apple-airpods-pro-2-wireless-active-noise-cancelling-earbuds-with-hearing-aid-feature-white/6447382.p",
     "expectedAdapter": "bestbuy",
-    "preferredFallback": "APPROVED_API"
+    "preferredFallback": "MANUAL_REVIEW"
   }
 ]
