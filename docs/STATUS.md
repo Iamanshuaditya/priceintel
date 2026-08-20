@@ -2,7 +2,7 @@
 
 ## Current milestone
 
-**Shopify reliability v1 is accepted/frozen. Best Buy crawler engineering is frozen behind source approval. Source governance is a version-controlled platform capability. Walmart and Target have now completed source-acceptability decisions without new crawler experiments.**
+**Shopify reliability v1 is accepted/frozen. Best Buy crawler engineering is frozen behind source approval. Source governance is a version-controlled platform capability. Walmart, Target, and Home Depot have completed source-acceptability decisions without new crawler experiments.**
 
 The accepted Shopify claim remains deliberately scoped: on the frozen 20-URL / 5-store Shopify corpus with independently reviewed decision truth, `shopify@1.3.0` achieved 100% decision accuracy: 15/15 expected observations correctly priced, 4/4 variant ambiguities correctly abstained, and 1/1 unavailable page correctly classified, with zero false price observations and zero false abstentions.
 
@@ -19,12 +19,19 @@ Walmart is source-reviewed before any new technical experiment:
 - `WALMART_PUBLIC_WEB` -> `NOT_APPROVED` for PriceIntel automated collection under the reviewed public terms;
 - `WALMART_MARKETPLACE_API` -> `REVIEW_REQUIRED`, because the API is seller/solution-provider scoped and its use for PriceIntel must be validated through the actual onboarding/authorization/use case before it can become an approved source.
 
-Target is now source-reviewed before crawler work:
+Target is source-reviewed before crawler work:
 
 - `TARGET_PUBLIC_WEB` -> `NOT_APPROVED` for PriceIntel automated commercial collection under the reviewed April 15, 2026 public terms;
 - `TARGET_PLUS_API` -> governance conclusion `REVIEW_REQUIRED`, but it is intentionally **not** a runtime hostname policy yet because the actual production API hostname/scopes have not been verified from the reviewed public material.
 
 Target also has a future price-identity requirement: an approved source must define stable location/store/channel/personalization context rather than treating `USD` alone as enough to identify the price being monitored.
+
+Home Depot is now source-reviewed before crawler work:
+
+- `HOME_DEPOT_PUBLIC_WEB` -> `NOT_APPROVED` for PriceIntel automated commercial collection under the reviewed public terms;
+- `HOME_DEPOT_SUPPLIER_PARTNER_DATA` -> governance conclusion `REVIEW_REQUIRED`, but it is intentionally **not** a runtime source/hostname because the actual interface, agreement, scopes, and permitted use are not verified.
+
+Home Depot also has a future price-identity requirement: an approved source must define stable geographic/store/channel/fulfillment context rather than treating `USD` alone as enough to identify the price being monitored.
 
 ## Accepted evidence
 
@@ -91,6 +98,18 @@ Target source rationale and the future location/store/channel/personalization pr
 
 No Target live fetch, browser experiment, adapter, or API probe was added.
 
+### Home Depot public-web source gate
+
+Commit `7f7a2afa59dce10312ccf360e44015964ebc9bc9` passed hardening run `32424877131`.
+
+`HOME_DEPOT_PUBLIC_WEB` is a `NOT_APPROVED` runtime policy for `homedepot.com` / subdomains. The deterministic transport regression requires Home Depot authorization to reject before both resolver and transport invocation.
+
+The same registry test requires `sourcePolicyForId('HOME_DEPOT_SUPPLIER_PARTNER_DATA') === undefined` until an actual permitted interface/agreement is verified. The separate source decision records Home Depot supplier/partner data as `REVIEW_REQUIRED` without inventing a runtime endpoint.
+
+Home Depot source rationale, the supplier-without-marketplace distinction, and the future geographic/store/channel/fulfillment price-context requirement are recorded in `docs/research/HOME_DEPOT_SOURCE_DECISION.md` and `docs/verification/HOME_DEPOT_SOURCE_GATE.md`.
+
+No Home Depot live fetch, browser experiment, adapter, unofficial API probe, or frontend reverse engineering was added.
+
 ## Historical operator milestone
 
 The browser-backed operator vertical remains accepted. GitHub Actions run `32334339220` on commit `c8fda2a1fa78da552169848c9bde3a88c7d2f3e3` published `priceintel/hardening = success` and uploaded browser evidence artifact `9394100566` (`sha256:f60680cc5f84209092a58ea4a215e2b92f7ea8b8c14d7342615c2c95861bad78`).
@@ -124,6 +143,10 @@ The accepted browser path proves `$100 HEALTHY -> $90 PRICE_CHANGED -> malformed
 - Target public web classified `NOT_APPROVED` without a live crawler experiment.
 - Target Plus seller/developer surface classified `REVIEW_REQUIRED` in governance evidence while runtime endpoint routing remains intentionally absent until verified.
 - Target future price identity explicitly requires stable location/store/channel/personalization context before reliability measurement can reopen.
+- Home Depot public web classified `NOT_APPROVED` without a live crawler experiment.
+- Home Depot supplier/partner data classified `REVIEW_REQUIRED` in governance evidence while runtime routing remains intentionally absent until an actual interface/agreement is verified.
+- Home Depot supplier documentation explicitly records that Home Depot does not offer a marketplace.
+- Home Depot future price identity explicitly requires stable geographic/store/channel/fulfillment context before reliability measurement can reopen.
 
 ## Reliability / governance lessons preserved
 
@@ -137,19 +160,21 @@ The accepted browser path proves `$100 HEALTHY -> $90 PRICE_CHANGED -> malformed
 - Source acceptability should precede adapter/corpus work for every new retailer.
 - Public web, retailer API, licensed provider, and browser are separate source methods and may have different approval states for the same retailer.
 - Runtime source matching must use verified endpoints; governance must not invent API hostnames from portal/documentation URLs.
-- Currency alone may be insufficient price identity for location-sensitive retailers such as Target.
+- Currency alone may be insufficient price identity for location-sensitive retailers such as Target and Home Depot.
+- Supplier/partner access is not equivalent to a general marketplace or competitor-price data license.
 
-## Active next program — Home Depot source decision
+## Active next program — Lowe's source decision
 
-Shopify and Best Buy crawler engineering remain frozen. Walmart and Target public-web engineering are also frozen unless their source status changes.
+Shopify and Best Buy crawler engineering remain frozen. Walmart, Target, and Home Depot public-web engineering are also frozen unless their source status changes.
 
 Next work should continue the source-first sequence rather than increasing scraping sophistication:
 
 1. validate Walmart Marketplace solution-provider/seller authorization only if the business wants a narrow seller-scoped Walmart feature; otherwise investigate licensed providers;
 2. verify Target Plus agreement/API endpoint/scopes only if a seller-partner feature is pursued; do not reverse-engineer Target.com;
-3. start **Home Depot source acceptability review** before any Home Depot crawler work;
-4. only build a new retailer adapter/corpus when its source is explicitly approved for the intended access method;
-5. select a future production-browser-fallback test retailer only where source permission is approved and rendering—not access permission—is the real technical obstacle.
+3. verify a Home Depot supplier/partner data interface only if an actual agreement/interface is available; do not infer one from Supplier Hub/EDI/HDConnect;
+4. start **Lowe's source acceptability review** before any Lowe's crawler work;
+5. only build a new retailer adapter/corpus when its source is explicitly approved for the intended access method;
+6. select a future production-browser-fallback test retailer only where source permission is approved and rendering—not access permission—is the real technical obstacle.
 
 ## Known risks / intentionally open
 
@@ -160,6 +185,8 @@ Next work should continue the source-first sequence rather than increasing scrap
 - Walmart public web is `NOT_APPROVED`; the Marketplace API remains `REVIEW_REQUIRED` pending seller/solution-provider authorization/use-case validation.
 - Target public web is `NOT_APPROVED`; Target Plus remains `REVIEW_REQUIRED` at the governance/research level with no verified runtime API endpoint policy yet.
 - Target requires a richer market/location/channel price identity before an approved source can safely generate comparable observations.
+- Home Depot public web is `NOT_APPROVED`; supplier/partner data remains `REVIEW_REQUIRED` at the governance/research level with no verified PriceIntel-suitable runtime interface.
+- Home Depot requires a richer geographic/store/channel/fulfillment price identity before an approved source can safely generate comparable observations.
 - The source-governance registry currently preserves legacy behavior for **unregistered** generic sources to avoid unexpectedly disabling existing Shopify/generic listings. Formal retailer reliability programs must register a source decision before new live measurement. A future explicit migration may make registry membership mandatory for all production sources.
 - Registry policy is version-controlled code/docs rather than a normalized database service; this is intentional for the initial governance layer.
 - Evidence retention/redaction policy for large raw artifacts remains open.
