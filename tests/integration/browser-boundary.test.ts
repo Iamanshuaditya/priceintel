@@ -79,21 +79,36 @@ test('browser cookie session is HttpOnly, CSRF-protected, revocable, rate-limite
   const productId = (productResult.body.product as {id:string}).id;
 
   const listingResult = await jsonRequest(base, `/v1/workspaces/${workspaceId}/products/${productId}/listings`, {
-    method:'POST', cookie, origin:base, body:{ retailer:'Fixture',url:'https://example.com/product' },
+    method:'POST', cookie, origin:base, body:{ retailer:'Fixture',url:'https://example.com/product',marketCountry:'US',locale:'en-US' },
   });
   assert.equal(listingResult.response.status, 201);
-  const listingId = (listingResult.body.listing as {id:string}).id;
+  const createdListing = listingResult.body.listing as {
+    id:string;expectedCurrency:string;marketCountry:string|null;locale:string|null;
+  };
+  const listingId = createdListing.id;
+  assert.equal(createdListing.expectedCurrency, 'USD', 'listing market currency should default from the product');
+  assert.equal(createdListing.marketCountry, 'US');
+  assert.equal(createdListing.locale, 'en-US');
 
   const listings = await jsonRequest(base, `/v1/workspaces/${workspaceId}/listings?productId=${productId}`, { cookie });
   assert.equal(listings.response.status, 200);
-  assert.equal((listings.body.listings as Array<{id:string}>).length, 1);
-  assert.equal((listings.body.listings as Array<{id:string}>)[0].id, listingId);
+  const listingRows = listings.body.listings as Array<{id:string;expectedCurrency:string;marketCountry:string|null;locale:string|null}>;
+  assert.equal(listingRows.length, 1);
+  assert.equal(listingRows[0].id, listingId);
+  assert.equal(listingRows[0].expectedCurrency, 'USD');
+  assert.equal(listingRows[0].marketCountry, 'US');
+  assert.equal(listingRows[0].locale, 'en-US');
 
   const trigger = await jsonRequest(base, `/v1/workspaces/${workspaceId}/listings/${listingId}/crawl`, {
     method:'POST', cookie, origin:base,
   });
   assert.equal(trigger.response.status, 202);
-  const crawlRunId = (trigger.body.crawl as {crawlRunId:string}).crawlRunId;
+  const crawl = trigger.body.crawl as {crawlRunId:string;queueJobId:string};
+  const crawlRunId = crawl.crawlRunId;
+  const queuedJob = await queue.getJob(crawl.queueJobId);
+  assert.ok(queuedJob, 'manual crawl should enqueue one durable identity message');
+  assert.deepEqual(Object.keys(queuedJob.data).sort(), ['crawlRunId','jobKey','listingId','workspaceId']);
+
   const crawlStatus = await jsonRequest(base, `/v1/workspaces/${workspaceId}/crawls/${crawlRunId}`, { cookie });
   assert.equal(crawlStatus.response.status, 200);
   assert.equal((crawlStatus.body.crawl as {status:string}).status, 'RUNNING');
