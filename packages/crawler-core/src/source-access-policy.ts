@@ -1,46 +1,82 @@
+import {
+  sourcePolicyForUrl,
+  type SourceAccessMethod,
+  type SourcePolicyStatus,
+} from './source-governance.ts';
+
 export interface SourceAccessDecision {
   allowed: boolean;
-  sourceId?: 'BESTBUY_PUBLIC_WEB';
-  code?: 'SOURCE_NOT_APPROVED';
+  sourceId?: string;
+  status?: SourcePolicyStatus;
+  method?: SourceAccessMethod;
+  code?: 'SOURCE_NOT_APPROVED' | 'SOURCE_REVIEW_REQUIRED';
   nextAction?: 'MANUAL_REVIEW';
   reason?: string;
-}
-
-function hostname(url: string) {
-  try { return new URL(url).hostname.toLowerCase(); }
-  catch { return ''; }
+  evidenceReference?: string;
+  reviewedAt?: string;
+  reviewAfter?: string;
 }
 
 /**
  * Operational source-permission gate, separate from parser capability.
  *
- * The Best Buy adapter remains useful for deterministic fixtures and for a
- * future source that is explicitly approved. Current public BestBuy.com and
- * Developer API terms do not establish permission for PriceIntel's automated
- * third-party competitor-price use, so production/live canary HTTP access is
- * failed closed pending an intentional approval change.
+ * Reviewed sources are governed by the version-controlled source registry.
+ * Unmatched URLs preserve the existing generic-crawler behavior for now; new
+ * retailer reliability programs should register source acceptability before
+ * live measurement begins.
  */
-export function evaluateAutomatedSourceAccess(url: string): SourceAccessDecision {
-  const host = hostname(url);
-  if (host === 'bestbuy.com' || host.endsWith('.bestbuy.com')) {
+export function evaluateAutomatedSourceAccess(
+  url: string,
+  method: SourceAccessMethod = 'PUBLIC_HTTP',
+): SourceAccessDecision {
+  const policy = sourcePolicyForUrl(url);
+  if (!policy) return { allowed:true };
+
+  if (policy.status === 'APPROVED' && policy.permittedMethods.includes(method)) {
     return {
-      allowed:false,
-      sourceId:'BESTBUY_PUBLIC_WEB',
-      code:'SOURCE_NOT_APPROVED',
-      nextAction:'MANUAL_REVIEW',
-      reason:'Best Buy automated source requires explicit written/licensed approval for PriceIntel use',
+      allowed:true,
+      sourceId:policy.sourceId,
+      status:policy.status,
+      method,
+      evidenceReference:policy.evidenceReference,
+      reviewedAt:policy.reviewedAt,
+      reviewAfter:policy.reviewAfter,
     };
   }
-  return { allowed:true };
+
+  const code = policy.status === 'REVIEW_REQUIRED'
+    ? 'SOURCE_REVIEW_REQUIRED' as const
+    : 'SOURCE_NOT_APPROVED' as const;
+
+  return {
+    allowed:false,
+    sourceId:policy.sourceId,
+    status:policy.status,
+    method,
+    code,
+    nextAction:'MANUAL_REVIEW',
+    reason:policy.reason,
+    evidenceReference:policy.evidenceReference,
+    reviewedAt:policy.reviewedAt,
+    reviewAfter:policy.reviewAfter,
+  };
 }
 
-export function assertAutomatedSourceAccess(url: string) {
-  const decision = evaluateAutomatedSourceAccess(url);
+export function assertAutomatedSourceAccess(
+  url: string,
+  method: SourceAccessMethod = 'PUBLIC_HTTP',
+) {
+  const decision = evaluateAutomatedSourceAccess(url, method);
   if (!decision.allowed) {
     throw Object.assign(new Error(decision.reason ?? 'Automated source is not approved'), {
       code:decision.code ?? 'SOURCE_NOT_APPROVED',
       sourceId:decision.sourceId,
+      status:decision.status,
+      method:decision.method,
       nextAction:decision.nextAction,
+      evidenceReference:decision.evidenceReference,
+      reviewedAt:decision.reviewedAt,
+      reviewAfter:decision.reviewAfter,
     });
   }
   return decision;
