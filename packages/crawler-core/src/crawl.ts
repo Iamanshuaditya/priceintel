@@ -24,7 +24,7 @@ export async function crawlStructuredProduct(input: CrawlInput, fetchHtml: HtmlF
     verifiedAt: fetchedAt,
     currency: candidate.currency,
     price: candidate.price,
-    inStock: candidate.inStock,
+    stockStatus: candidate.stockStatus,
     sellerName: candidate.sellerName,
     sourceMethod: 'JSON_LD',
     extractorVersion: 'jsonld-v1',

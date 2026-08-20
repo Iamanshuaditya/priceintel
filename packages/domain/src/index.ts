@@ -8,6 +8,7 @@ export type ListingHealth =
   | 'NEEDS_REVIEW';
 
 export type SourceMethod = 'JSON_LD' | 'RETAILER_ADAPTER' | 'GENERIC_DOM' | 'BROWSER';
+export type StockStatus = 'IN_STOCK' | 'OUT_OF_STOCK' | 'UNKNOWN';
 
 export interface Workspace { id: string; name: string }
 export interface Product {
@@ -39,7 +40,7 @@ export interface PriceObservation {
   verifiedAt: Date;
   currency: string;
   price: number;
-  inStock: boolean;
+  stockStatus: StockStatus;
   sellerName?: string;
   sourceMethod: SourceMethod;
   extractorVersion: string;
@@ -51,8 +52,8 @@ export interface ChangeEvent {
   listingId: string;
   previousObservationId: string;
   observationId: string;
-  previousValue: number | boolean;
-  currentValue: number | boolean;
+  previousValue: number | StockStatus;
+  currentValue: number | StockStatus;
 }
 
 export class TenantBoundaryError extends Error {
@@ -140,11 +141,11 @@ export class InMemoryMonitoringStore {
         previousValue: prior.price, currentValue: observation.price,
       });
     }
-    if (prior && prior.inStock !== observation.inStock) {
+    if (prior && prior.stockStatus !== observation.stockStatus) {
       this.#changes.push({
         type: 'STOCK_CHANGED', listingId: listing.id,
         previousObservationId: prior.id, observationId: observation.id,
-        previousValue: prior.inStock, currentValue: observation.inStock,
+        previousValue: prior.stockStatus, currentValue: observation.stockStatus,
       });
     }
 

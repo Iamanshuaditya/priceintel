@@ -9,6 +9,7 @@ test('first vertical backend spine + price change + failure honesty', async (t) 
   const base = await fixture.listen();
   t.after(async () => fixture.close());
 
+  // Test-only local fetcher. Production `secureFetch` intentionally blocks localhost.
   const fetchHtml = async (url: string) => {
     const response = await fetch(url);
     if (!response.ok) throw Object.assign(new Error(`HTTP ${response.status}`), { code: `HTTP_${response.status}` });
@@ -24,6 +25,7 @@ test('first vertical backend spine + price change + failure honesty', async (t) 
   const first = await crawlStructuredProduct({ workspaceId:'ws_1', productId:'prod_1', listingId:'list_1', url:`${base}/product/jsonld`, crawlRunId:'run_1', now:firstAt }, fetchHtml);
   store.recordSuccessfulObservation('ws_1', first);
   assert.equal(first.price, 100);
+  assert.equal(first.stockStatus, 'IN_STOCK');
   assert.equal(store.getListing('ws_1','list_1')?.health, 'HEALTHY');
   assert.equal(store.getObservations('ws_1','list_1').length, 1);
 
@@ -31,6 +33,7 @@ test('first vertical backend spine + price change + failure honesty', async (t) 
   const secondAt = new Date('2026-08-20T02:00:00Z');
   const second = await crawlStructuredProduct({ workspaceId:'ws_1', productId:'prod_1', listingId:'list_1', url:`${base}/product/jsonld`, crawlRunId:'run_2', now:secondAt }, fetchHtml);
   store.recordSuccessfulObservation('ws_1', second);
+  assert.equal(second.stockStatus, 'OUT_OF_STOCK');
   assert.equal(store.getObservations('ws_1','list_1').length, 2);
   assert.deepEqual(store.getChanges('ws_1','list_1').map((c)=>c.type).sort(), ['PRICE_CHANGED','STOCK_CHANGED']);
 

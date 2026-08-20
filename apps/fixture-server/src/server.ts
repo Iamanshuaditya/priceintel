@@ -1,6 +1,6 @@
 import http from 'node:http';
 
-export interface FixtureState { price: number; stock: boolean; seller: string; malformed: boolean }
+export interface FixtureState { price: number; stock: boolean | null; seller: string; malformed: boolean }
 export function createFixtureServer(initial: Partial<FixtureState> = {}) {
   let state: FixtureState = { price: 99.99, stock: true, seller: 'Example Seller', malformed: false, ...initial };
   const server = http.createServer(async (req, res) => {
@@ -9,7 +9,7 @@ export function createFixtureServer(initial: Partial<FixtureState> = {}) {
     if (req.method === 'GET' && url.pathname === '/product/jsonld') {
       const body = state.malformed
         ? '<html><script type="application/ld+json">{broken</script></html>'
-        : `<html><body><h1>Fixture Product</h1><script type="application/ld+json">${JSON.stringify({ '@context':'https://schema.org','@type':'Product',name:'Fixture Product',offers:{'@type':'Offer',price:state.price.toFixed(2),priceCurrency:'USD',availability:state.stock?'https://schema.org/InStock':'https://schema.org/OutOfStock',seller:{'@type':'Organization',name:state.seller}} })}</script></body></html>`;
+        : `<html><body><h1>Fixture Product</h1><script type="application/ld+json">${JSON.stringify({ '@context':'https://schema.org','@type':'Product',name:'Fixture Product',offers:{'@type':'Offer',price:state.price.toFixed(2),priceCurrency:'USD',...(state.stock === null ? {} : { availability: state.stock ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock' }),seller:{'@type':'Organization',name:state.seller}} })}</script></body></html>`;
       res.writeHead(200, {'content-type':'text/html; charset=utf-8'}); return res.end(body);
     }
     if (req.method === 'POST' && url.pathname === '/admin/state') {

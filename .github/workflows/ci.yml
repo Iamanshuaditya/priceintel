@@ -1,8 +1,11 @@
 name: ci
 on:
+  workflow_dispatch:
   pull_request:
   push:
-    branches: [main]
+    branches:
+      - main
+      - "work/**"
 jobs:
   foundation:
     runs-on: ubuntu-latest
