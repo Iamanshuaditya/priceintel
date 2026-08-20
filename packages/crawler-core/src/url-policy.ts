@@ -149,7 +149,6 @@ async function requestPinnedAddress(input: PinnedTransportInput, address: string
       servername: isHttps ? input.url.hostname : undefined,
       agent: false,
       family,
-      autoSelectFamily: false,
       lookup: createPinnedLookup(address),
       signal: input.signal,
     }, (message) => {
