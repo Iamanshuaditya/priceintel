@@ -1,8 +1,19 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { performance } from 'node:perf_hooks';
-import { extractWithAdapterSupplements, extractWithAdapters, selectAdapterCandidate } from '../packages/crawler-core/src/adapters/registry.ts';
 import type { FetchArtifact, SupplementaryRequest } from '../packages/crawler-core/src/adapters/types.ts';
-import { chooseFallbackDecision, evaluateTruth, isLikelyChallengePage, truthSummary, type FallbackDecision, type TruthState } from '../packages/crawler-core/src/reliability.ts';
+import { executeExtractionPipeline } from '../packages/crawler-core/src/extraction-pipeline.ts';
+import {
+  chooseFallbackDecision,
+  decisionTruthSummary,
+  evaluateDecisionTruth,
+  evaluateTruth,
+  isLikelyChallengePage,
+  truthSummary,
+  type DecisionTruthEvaluation,
+  type FallbackDecision,
+  type TruthEvaluation,
+  type TruthSample,
+} from '../packages/crawler-core/src/reliability.ts';
 import { secureFetch } from '../packages/crawler-core/src/url-policy.ts';
 
 interface CorpusEntry {
@@ -13,14 +24,7 @@ interface CorpusEntry {
   preferredFallback?: FallbackDecision;
 }
 
-interface ManualTruth {
-  visiblePrice: number;
-  currency: string;
-  verifiedAt: string;
-  note?: string;
-}
-
-type TruthFile = Record<string, ManualTruth>;
+type TruthFile = Record<string, TruthSample>;
 
 interface AttemptResult {
   id: string;
@@ -54,7 +58,9 @@ interface AttemptResult {
   errorCode?: string;
   adapterAttempts?: unknown[];
   supplementaryAttempts?: unknown[];
-  manualTruth?: ManualTruth & { state:TruthState;ageHours?:number;fresh:boolean;extracted:boolean;correct?:boolean };
+  truth?: TruthSample;
+  truthEvaluation?: TruthEvaluation;
+  decisionTruth?: DecisionTruthEvaluation;
 }
 
 function arg(name: string, fallback: string) {
@@ -98,6 +104,7 @@ async function runOne(entry: CorpusEntry, truth: TruthFile, maxTruthAgeHours: nu
   const totalStart = performance.now();
   let html = '';
   let finalUrl: string | undefined;
+  let httpStatus: number | undefined;
   let fetchDurationMs = 0;
   try {
     const fetchStart = performance.now();
@@ -105,34 +112,23 @@ async function runOne(entry: CorpusEntry, truth: TruthFile, maxTruthAgeHours: nu
     fetchDurationMs = Math.round(performance.now() - fetchStart);
     html = artifact.html;
     finalUrl = artifact.finalUrl;
+    httpStatus = artifact.status;
     const challenge = isLikelyChallengePage({ status:artifact.status, html:artifact.html, finalUrl:artifact.finalUrl });
 
     const extractionStart = performance.now();
-    const primary = extractWithAdapters(artifact);
-    let extraction = primary;
-    let selected;
-    let selectionError: unknown;
-    try { selected = selectAdapterCandidate(primary.candidates); }
-    catch (error) { selectionError = error; }
-
-    if (!selected && !challenge) {
-      extraction = await extractWithAdapterSupplements(artifact, async (request: SupplementaryRequest) => {
-        const supplemental = await fetchArtifact(request.url, {
-          timeoutMs:request.timeoutMs,
-          maxResponseBytes:request.maxBytes,
-        });
-        if (!supplemental.status || supplemental.status < 200 || supplemental.status >= 300) {
-          throw Object.assign(new Error(`HTTP ${supplemental.status ?? 0}`), { code:`HTTP_${supplemental.status ?? 0}` });
-        }
-        return supplemental;
+    const pipeline = await executeExtractionPipeline(artifact, async (request: SupplementaryRequest) => {
+      const supplemental = await fetchArtifact(request.url, {
+        timeoutMs:request.timeoutMs,
+        maxResponseBytes:request.maxBytes,
       });
-      try {
-        selected = selectAdapterCandidate(extraction.candidates);
-        selectionError = undefined;
-      } catch (error) { selectionError = error; }
-    }
-
+      if (!supplemental.status || supplemental.status < 200 || supplemental.status >= 300) {
+        throw Object.assign(new Error(`HTTP ${supplemental.status ?? 0}`), { code:`HTTP_${supplemental.status ?? 0}` });
+      }
+      return supplemental;
+    });
     const extractionDurationMs = Math.round(performance.now() - extractionStart);
+    const extraction = pipeline.extraction;
+    const selected = pipeline.candidate;
     const supplementaryAttempts = extraction.supplementaryAttempts ?? [];
     const supplementaryRequestCount = supplementaryAttempts.filter((item) => item.requestId !== 'extract-supplementary').length;
     const supplementaryBytes = supplementaryAttempts.reduce((sum, item) => sum + item.bytesDownloaded, 0);
@@ -144,8 +140,12 @@ async function runOne(entry: CorpusEntry, truth: TruthFile, maxTruthAgeHours: nu
     });
 
     const manual = truth[entry.id];
-    const evaluation = evaluateTruth(manual, {price:selected?.price,currency:selected?.currency}, Date.now(), maxTruthAgeHours);
-    const manualTruth = manual ? { ...manual, ...evaluation } : undefined;
+    const truthEvaluation = manual
+      ? evaluateTruth(manual, {price:selected?.price,currency:selected?.currency}, Date.now(), maxTruthAgeHours)
+      : undefined;
+    const decisionTruth = manual
+      ? evaluateDecisionTruth(manual, {price:selected?.price,currency:selected?.currency,challenge,httpStatus:artifact.status}, Date.now(), maxTruthAgeHours)
+      : undefined;
 
     return {
       id:entry.id,
@@ -167,7 +167,7 @@ async function runOne(entry: CorpusEntry, truth: TruthFile, maxTruthAgeHours: nu
       confidence:selected?.confidence,
       expectedAdapter:entry.expectedAdapter,
       expectedAdapterMatched:entry.expectedAdapter ? selected?.provenance.adapterId === entry.expectedAdapter : undefined,
-      primaryCandidateCount:primary.candidates.length,
+      primaryCandidateCount:extraction.primaryCandidateCount,
       supplementaryRequestCount,
       supplementaryBytes,
       selectedFromSupplementary,
@@ -176,21 +176,27 @@ async function runOne(entry: CorpusEntry, truth: TruthFile, maxTruthAgeHours: nu
       fetchDurationMs,
       extractionDurationMs,
       totalDurationMs:Math.round(performance.now() - totalStart),
-      errorCode:selectionError ? errorCode(selectionError) : undefined,
+      errorCode:pipeline.selectionError ? errorCode(pipeline.selectionError) : undefined,
       adapterAttempts:extraction.attempts,
       supplementaryAttempts,
-      manualTruth,
+      truth:manual,
+      truthEvaluation,
+      decisionTruth,
     };
   } catch (error) {
+    const challenge = isLikelyChallengePage({ status:httpStatus, html, finalUrl });
     const manual = truth[entry.id];
-    const evaluation = evaluateTruth(manual, {}, Date.now(), maxTruthAgeHours);
-    const challenge = isLikelyChallengePage({ html, finalUrl });
+    const truthEvaluation = manual ? evaluateTruth(manual, {}, Date.now(), maxTruthAgeHours) : undefined;
+    const decisionTruth = manual
+      ? evaluateDecisionTruth(manual, {challenge,httpStatus}, Date.now(), maxTruthAgeHours)
+      : undefined;
     return {
       id:entry.id,
       retailer:entry.retailer,
       url:entry.url,
       finalUrl,
       fetchMethod:'HTTP_PINNED',
+      httpStatus,
       challenge,
       bytesDownloaded:html ? Buffer.byteLength(html) : 0,
       expectedAdapter:entry.expectedAdapter,
@@ -205,14 +211,17 @@ async function runOne(entry: CorpusEntry, truth: TruthFile, maxTruthAgeHours: nu
       extractionDurationMs:0,
       totalDurationMs:Math.round(performance.now() - totalStart),
       errorCode:errorCode(error),
-      manualTruth:manual ? { ...manual, ...evaluation } : undefined,
+      truth:manual,
+      truthEvaluation,
+      decisionTruth,
     };
   }
 }
 
 function summarize(attempts: AttemptResult[]) {
   const extracted = attempts.filter((item) => item.price !== undefined);
-  const truth = truthSummary(attempts.filter((item) => item.manualTruth).map((item) => item.manualTruth!));
+  const legacyTruth = truthSummary(attempts.flatMap((item) => item.truthEvaluation ? [item.truthEvaluation] : []));
+  const decisionTruth = decisionTruthSummary(attempts.flatMap((item) => item.decisionTruth ? [item.decisionTruth] : []));
   const retailers = [...new Set(attempts.map((item) => item.retailer))].sort();
   const fallbackValues: FallbackDecision[] = ['NONE','SUPPLEMENTARY_HTTP','BROWSER_RENDER','APPROVED_API','APPROVED_DATA_PROVIDER','BLOCKED','MANUAL_REVIEW'];
   return {
@@ -227,7 +236,8 @@ function summarize(attempts: AttemptResult[]) {
     parseFailurePct:ratio(attempts.filter((item) => item.errorCode === 'PARSE_FAILED' || item.errorCode === 'CANDIDATE_DISAGREEMENT').length, attempts.length),
     medianCrawlMs:percentile(attempts.map((item) => item.totalDurationMs), 50),
     p95CrawlMs:percentile(attempts.map((item) => item.totalDurationMs), 95),
-    ...truth,
+    ...legacyTruth,
+    ...decisionTruth,
     fallbackDecisions:Object.fromEntries(fallbackValues.map((decision) => [decision, attempts.filter((item) => item.fallbackDecision === decision).length])),
     perRetailer:Object.fromEntries(retailers.map((retailer) => {
       const rows = attempts.filter((item) => item.retailer === retailer);
@@ -244,7 +254,9 @@ function summarize(attempts: AttemptResult[]) {
 }
 
 function markdown(runAt: string, summary: ReturnType<typeof summarize>, attempts: AttemptResult[]) {
-  const correctness = summary.correctnessAmongExtractedTruthPct === null ? 'N/A' : `${summary.correctnessAmongExtractedTruthPct}%`;
+  const priceCorrectness = summary.observationPriceCorrectnessPct === null ? 'N/A' : `${summary.observationPriceCorrectnessPct}%`;
+  const abstentionAccuracy = summary.abstentionAccuracyPct === null ? 'N/A' : `${summary.abstentionAccuracyPct}%`;
+  const overallAccuracy = summary.overallDecisionAccuracyPct === null ? 'N/A' : `${summary.overallDecisionAccuracyPct}%`;
   const lines = [
     '# PriceIntel Retailer Reliability',
     '',
@@ -260,22 +272,31 @@ function markdown(runAt: string, summary: ReturnType<typeof summarize>, attempts
     `- Parse/disagreement failure: **${summary.parseFailurePct}%**`,
     `- Median crawl: **${summary.medianCrawlMs ?? 'n/a'} ms**`,
     `- P95 crawl: **${summary.p95CrawlMs ?? 'n/a'} ms**`,
-    `- Fresh manual truth samples: **${summary.freshTruthSamples}**`,
-    `- Truth extraction coverage: **${summary.truthExtractedSamples}/${summary.freshTruthSamples} (${summary.truthExtractionCoveragePct}%)**`,
-    `- Correctness among extracted truth: **${correctness}**`,
-    `- End-to-end correct coverage: **${summary.endToEndCorrectCoveragePct}%**`,
+    '',
+    `- Fresh decision truth samples: **${summary.freshDecisionTruthSamples}**`,
+    `- Expected observations: **${summary.expectedObservations}**`,
+    `- Correct observations: **${summary.correctObservations}/${summary.expectedObservations}**`,
+    `- Observation price correctness: **${priceCorrectness}**`,
+    `- Expected variant abstentions: **${summary.expectedAbstentions}**`,
+    `- Correct abstentions: **${summary.correctAbstentions}/${summary.expectedAbstentions}**`,
+    `- Abstention accuracy: **${abstentionAccuracy}**`,
+    `- Expected unavailable: **${summary.expectedUnavailable}**; correct: **${summary.correctUnavailable}**`,
+    `- Expected blocked: **${summary.expectedBlocked}**; correct: **${summary.correctBlocked}**`,
+    `- False price observations: **${summary.falsePriceObservations}**`,
+    `- False abstentions: **${summary.falseAbstentions}**`,
+    `- Overall decision accuracy: **${overallAccuracy}**`,
     '',
     `- Next actions: **${Object.entries(summary.fallbackDecisions).map(([key,value]) => `${key}=${value}`).join(', ')}**`,
     '',
     '## Attempts',
     '',
-    '| Retailer | HTTP | Adapter | Price | Stock | Primary | Supplement | Next action | Challenge | Error | Truth |',
-    '|---|---:|---|---:|---|---:|---:|---|---|---|---|',
+    '| Retailer | HTTP | Adapter | Price | Stock | Primary | Supplement | Next action | Challenge | Error | Expected | Actual | Truth |',
+    '|---|---:|---|---:|---|---:|---:|---|---|---|---|---|---|',
   ];
   for (const item of attempts) {
-    lines.push(`| ${item.retailer} | ${item.httpStatus ?? '—'} | ${item.adapter ?? '—'} | ${item.price ?? '—'} ${item.currency ?? ''} | ${item.stockStatus ?? '—'} | ${item.primaryCandidateCount} | ${item.supplementaryRequestCount} | ${item.fallbackDecision} | ${item.challenge ? 'yes' : 'no'} | ${item.errorCode ?? '—'} | ${item.manualTruth?.state ?? 'NO_TRUTH'} |`);
+    lines.push(`| ${item.retailer} | ${item.httpStatus ?? '—'} | ${item.adapter ?? '—'} | ${item.price ?? '—'} ${item.currency ?? ''} | ${item.stockStatus ?? '—'} | ${item.primaryCandidateCount} | ${item.supplementaryRequestCount} | ${item.fallbackDecision} | ${item.challenge ? 'yes' : 'no'} | ${item.errorCode ?? '—'} | ${item.decisionTruth?.expectation ?? 'NO_TRUTH'} | ${item.decisionTruth?.actualDecision ?? '—'} | ${item.decisionTruth?.state ?? 'NO_TRUTH'} |`);
   }
-  lines.push('', '> Live canaries measure behavior; they are intentionally not a deterministic release gate. Coverage and correctness use separate denominators: NOT_EXTRACTED is not counted as an incorrect extracted price.', '');
+  lines.push('', '> Live canaries measure behavior; they are intentionally not a deterministic release gate. Production and canary use the same executeExtractionPipeline orchestrator. Browser audit evidence is an independent verification input and does not feed observations.', '');
   return lines.join('\n');
 }
 
