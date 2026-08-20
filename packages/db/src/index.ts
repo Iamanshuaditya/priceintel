@@ -86,12 +86,16 @@ export async function persistObservationAndEffects(pool: Pool, observation: Pric
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const listingLock = await client.query<{product_id:string}>(
-      'SELECT product_id FROM competitor_listings WHERE id=$1 AND workspace_id=$2 FOR UPDATE',
+    const listingLock = await client.query<{
+      product_id:string;
+      last_crawl_at: Date | null;
+    }>(
+      'SELECT product_id, last_crawl_at FROM competitor_listings WHERE id=$1 AND workspace_id=$2 FOR UPDATE',
       [observation.competitorListingId, observation.workspaceId],
     );
     if (listingLock.rowCount !== 1) throw new Error('Listing not found in workspace');
-    if (listingLock.rows[0].product_id !== observation.productId) throw new Error('Observation product/listing mismatch');
+    const listing = listingLock.rows[0];
+    if (listing.product_id !== observation.productId) throw new Error('Observation product/listing mismatch');
 
     const inserted = await client.query<{id:string}>(`
       INSERT INTO price_observations (
@@ -109,55 +113,85 @@ export async function persistObservationAndEffects(pool: Pool, observation: Pric
 
     if (inserted.rowCount === 0) {
       await client.query('COMMIT');
-      return { inserted: false as const, changeCount: 0, outboxCount: 0 };
+      return { inserted: false as const, advancedCurrent: false, changeCount: 0, outboxCount: 0 };
     }
 
-    const priorResult = await client.query<{
-      id:string; price:string; stock_status:StockStatus;
-    }>(`
-      SELECT id, price::text, stock_status
+    // History is append-only, but materialized current state must be monotonic by observation time.
+    // A slow older crawl may finish after a newer crawl; it stays in history but must not roll current state backward.
+    // `id` is only a deterministic tie-breaker for observations sharing the exact same verified_at timestamp.
+    const newestResult = await client.query<{id:string}>(`
+      SELECT id
       FROM price_observations
-      WHERE competitor_listing_id=$1 AND workspace_id=$2 AND id<>$3
+      WHERE competitor_listing_id=$1 AND workspace_id=$2
       ORDER BY verified_at DESC, id DESC
       LIMIT 1
-    `, [observation.competitorListingId, observation.workspaceId, observation.id]);
+    `, [observation.competitorListingId, observation.workspaceId]);
+    const advancedCurrent = newestResult.rows[0]?.id === observation.id;
 
     let changeCount = 0;
     let outboxCount = 0;
-    const prior = priorResult.rows[0];
-    if (prior) {
-      const priorPrice = Number(prior.price);
-      if (priorPrice !== observation.price) {
-        const created = await insertChangeAndOutbox(client, observation.workspaceId, observation.competitorListingId, observation.id, prior.id, {
-          id: `chg_${observation.id}_price`, type: 'PRICE_CHANGED', previousValue: priorPrice, currentValue: observation.price,
-        });
-        if (created) { changeCount += 1; outboxCount += 1; }
+    if (advancedCurrent) {
+      const priorResult = await client.query<{
+        id:string; price:string; stock_status:StockStatus;
+      }>(`
+        SELECT id, price::text, stock_status
+        FROM price_observations
+        WHERE competitor_listing_id=$1
+          AND workspace_id=$2
+          AND (verified_at < $3 OR (verified_at = $3 AND id < $4))
+        ORDER BY verified_at DESC, id DESC
+        LIMIT 1
+      `, [observation.competitorListingId, observation.workspaceId, observation.verifiedAt, observation.id]);
+
+      const prior = priorResult.rows[0];
+      if (prior) {
+        const priorPrice = Number(prior.price);
+        if (priorPrice !== observation.price) {
+          const created = await insertChangeAndOutbox(client, observation.workspaceId, observation.competitorListingId, observation.id, prior.id, {
+            id: `chg_${observation.id}_price`, type: 'PRICE_CHANGED', previousValue: priorPrice, currentValue: observation.price,
+          });
+          if (created) { changeCount += 1; outboxCount += 1; }
+        }
+        if (prior.stock_status !== observation.stockStatus) {
+          const created = await insertChangeAndOutbox(client, observation.workspaceId, observation.competitorListingId, observation.id, prior.id, {
+            id: `chg_${observation.id}_stock`, type: 'STOCK_CHANGED', previousValue: prior.stock_status, currentValue: observation.stockStatus,
+          });
+          if (created) { changeCount += 1; outboxCount += 1; }
+        }
       }
-      if (prior.stock_status !== observation.stockStatus) {
-        const created = await insertChangeAndOutbox(client, observation.workspaceId, observation.competitorListingId, observation.id, prior.id, {
-          id: `chg_${observation.id}_stock`, type: 'STOCK_CHANGED', previousValue: prior.stock_status, currentValue: observation.stockStatus,
-        });
-        if (created) { changeCount += 1; outboxCount += 1; }
-      }
+
+      const successIsLatestAttempt = listing.last_crawl_at === null || observation.fetchedAt >= listing.last_crawl_at;
+      await client.query(`
+        UPDATE competitor_listings SET
+          current_price=$1,
+          current_currency=$2,
+          current_stock_status=$3,
+          last_crawl_at=GREATEST(COALESCE(last_crawl_at, $4), $4),
+          last_successful_crawl_at=$5,
+          health=CASE WHEN $8 THEN 'HEALTHY' ELSE health END,
+          failure_count=CASE WHEN $8 THEN 0 ELSE failure_count END,
+          last_failure_code=CASE WHEN $8 THEN NULL ELSE last_failure_code END
+        WHERE id=$6 AND workspace_id=$7
+      `, [
+        observation.price, observation.currency, observation.stockStatus,
+        observation.fetchedAt, observation.verifiedAt,
+        observation.competitorListingId, observation.workspaceId, successIsLatestAttempt,
+      ]);
+    } else {
+      // Even a historical success is still a crawl attempt, but it cannot overwrite newer health/current state.
+      await client.query(`
+        UPDATE competitor_listings
+        SET last_crawl_at=GREATEST(COALESCE(last_crawl_at, $1), $1)
+        WHERE id=$2 AND workspace_id=$3
+      `, [observation.fetchedAt, observation.competitorListingId, observation.workspaceId]);
     }
 
-    await client.query(`
-      UPDATE competitor_listings SET
-        current_price=$1, current_currency=$2, current_stock_status=$3,
-        last_crawl_at=$4, last_successful_crawl_at=$5,
-        health='HEALTHY', failure_count=0, last_failure_code=NULL
-      WHERE id=$6 AND workspace_id=$7
-    `, [
-      observation.price, observation.currency, observation.stockStatus,
-      observation.fetchedAt, observation.verifiedAt,
-      observation.competitorListingId, observation.workspaceId,
-    ]);
     await client.query(`
       UPDATE crawl_runs SET status='SUCCEEDED', finished_at=$1, failure_code=NULL
       WHERE id=$2 AND workspace_id=$3
     `, [observation.verifiedAt, observation.crawlRunId, observation.workspaceId]);
     await client.query('COMMIT');
-    return { inserted: true as const, changeCount, outboxCount };
+    return { inserted: true as const, advancedCurrent, changeCount, outboxCount };
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;
@@ -181,9 +215,13 @@ export async function recordCrawlFailure(
       WHERE id=$3 AND workspace_id=$4 AND status <> 'SUCCEEDED'
     `, [at, code, input.id, input.workspaceId]);
     await client.query(`
-      UPDATE competitor_listings SET last_crawl_at=$1, failure_count=failure_count+1,
-        last_failure_code=$2, health=$3
+      UPDATE competitor_listings SET
+        last_crawl_at=$1,
+        failure_count=failure_count+1,
+        last_failure_code=$2,
+        health=$3
       WHERE id=$4 AND workspace_id=$5
+        AND (last_crawl_at IS NULL OR $1 >= last_crawl_at)
     `, [at, code, health, input.listingId, input.workspaceId]);
     await client.query('COMMIT');
   } catch (error) {

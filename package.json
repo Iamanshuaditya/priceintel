@@ -11,6 +11,8 @@
     "node": ">=22.6"
   },
   "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.build.json",
     "test": "node --disable-warning=ExperimentalWarning --experimental-strip-types --test tests/*.test.ts packages/*/test/*.test.ts",
     "test:security": "node --disable-warning=ExperimentalWarning --experimental-strip-types --test packages/crawler-core/test/url-policy.test.ts",
     "test:vertical": "node --disable-warning=ExperimentalWarning --experimental-strip-types --test tests/vertical-slice.test.ts",
@@ -21,7 +23,12 @@
   },
   "dependencies": {
     "bullmq": "6.1.1",
-    "pg": "8.23.0",
-    "ioredis": "5.10.1"
+    "ioredis": "5.10.1",
+    "pg": "8.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.18.0",
+    "@types/pg": "8.21.0",
+    "typescript": "7.0.2"
   }
 }

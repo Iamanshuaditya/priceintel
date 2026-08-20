@@ -7,8 +7,9 @@ on:
       - main
       - "work/**"
 
+# Temporary write permission is only for the one-time package-lock bootstrap.
 permissions:
-  contents: read
+  contents: write
   statuses: write
 
 jobs:
@@ -45,16 +46,34 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Install dependencies
-        run: npm install --no-audit --no-fund
-      - name: Run full persistence and worker gate
+      - name: Install dependencies / bootstrap lockfile once
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --no-audit --no-fund
+          else
+            npm install --no-audit --no-fund
+          fi
+      - name: Commit generated lockfile once
+        if: github.event_name == 'push' && hashFiles('package-lock.json') != ''
+        run: |
+          if git ls-files --error-unmatch package-lock.json >/dev/null 2>&1; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          git commit -m "chore: lock dependency graph"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+      - name: Run full hardening gate
         id: full-tests
         run: |
+          npm run typecheck
           npm test
           npm run test:security
           npm run test:vertical
           npm run test:integration
-      - name: Publish observable persistence/worker status
+          npm run build
+      - name: Publish observable hardening status
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
@@ -66,4 +85,4 @@ jobs:
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
-            -d "{\"state\":\"$STATE\",\"context\":\"priceintel/persistence-worker\",\"description\":\"Persistence/worker gate: $STATE\",\"target_url\":\"$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID\"}"
+            -d "{\"state\":\"$STATE\",\"context\":\"priceintel/hardening\",\"description\":\"Persistence hardening gate: $STATE\",\"target_url\":\"$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID\"}"
