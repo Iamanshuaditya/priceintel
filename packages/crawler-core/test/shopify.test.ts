@@ -29,15 +29,47 @@ test('Shopify adapter handles conservative non-varying theme product JSON', () =
   assert.equal(selected.stockStatus, 'IN_STOCK');
   assert.equal(selected.sellerName, 'Fixture Vendor');
   assert.equal(selected.provenance.adapterId, 'shopify');
+  assert.equal(selected.provenance.adapterVersion, '1.3.0');
 });
 
-test('Shopify theme product JSON refuses varying variant prices', () => {
+test('Shopify theme product JSON still refuses price variation among live variants', () => {
   const html = `
     <meta property="og:price:currency" content="USD">
     <script>Shopify.theme = {name:'fixture'};</script>
     <script type="application/json" id="ProductJson-product-template">${JSON.stringify({
       price:1000, price_varies:true, available:true,
       variants:[{price:1000,available:true},{price:2000,available:true}],
+    })}</script>`;
+  assert.equal(shopifyAdapter.extract(artifact('https://fixture-shop.example/products/widget', html)).length, 0);
+});
+
+test('Shopify theme ProductJson ignores unavailable-only historical price variation', () => {
+  const html = `
+    <meta property="og:price:currency" content="USD">
+    <script>Shopify.theme = {name:'fixture'};</script>
+    <script type="application/json" id="ProductJson-product-template">${JSON.stringify({
+      price:1000, price_varies:true, available:true,
+      variants:[
+        {id:11,price:1000,available:true},
+        {id:22,price:1150,available:false},
+      ],
+    })}</script>`;
+  const selected = selectAdapterCandidate(shopifyAdapter.extract(artifact('https://fixture-shop.example/products/widget', html)));
+  assert.equal(selected.price, 10);
+  assert.equal(selected.stockStatus, 'IN_STOCK');
+  assert.match(selected.provenance.sourcePath, /available-variants/);
+});
+
+test('Shopify does not filter variants when availability evidence is incomplete', () => {
+  const html = `
+    <meta property="og:price:currency" content="USD">
+    <script>Shopify.theme = {name:'fixture'};</script>
+    <script type="application/json" id="ProductJson-product-template">${JSON.stringify({
+      price:1000, price_varies:true, available:true,
+      variants:[
+        {id:11,price:1000,available:true},
+        {id:22,price:1150},
+      ],
     })}</script>`;
   assert.equal(shopifyAdapter.extract(artifact('https://fixture-shop.example/products/widget', html)).length, 0);
 });
@@ -50,7 +82,7 @@ test('Shopify OpenGraph price alone is not a product observation', () => {
   assert.equal(shopifyAdapter.extract(artifact('https://fixture-shop.example/products/widget', html)).length, 0);
 });
 
-test('Shopify 1.2 uses bounded same-origin product Ajax JSON when primary has no candidate', async () => {
+test('Shopify 1.3 uses bounded same-origin product Ajax JSON when primary has no candidate', async () => {
   const primary = artifact(
     'https://fixture-shop.example/en/products/widget',
     '<meta property="og:price:currency" content="USD"><script>Shopify.theme={name:"fixture"}</script>',
@@ -68,19 +100,40 @@ test('Shopify 1.2 uses bounded same-origin product Ajax JSON when primary has no
   assert.equal(selected.price, 129);
   assert.equal(selected.currency, 'USD');
   assert.equal(selected.provenance.adapterId, 'shopify');
-  assert.equal(selected.provenance.adapterVersion, '1.2.0');
+  assert.equal(selected.provenance.adapterVersion, '1.3.0');
   assert.match(selected.provenance.sourcePath, /products\/\{handle\}\.js/);
 });
 
-test('Shopify supplementary evidence can resolve a primary disagreement', async () => {
+test('Shopify Ajax accepts one live price when all differing prices are unavailable', async () => {
+  const primary = artifact(
+    'https://fixture-shop.example/products/widget',
+    '<meta property="og:price:currency" content="USD"><script>Shopify.theme={}</script>',
+  );
+  const result = await extractWithAdapterSupplements(primary, async (request) => artifact(request.url, JSON.stringify({
+    price:1000,
+    price_varies:true,
+    available:true,
+    variants:[
+      {id:11,price:1000,available:true},
+      {id:22,price:1150,available:false},
+    ],
+  })));
+  const selected = selectAdapterCandidate(result.candidates);
+  assert.equal(selected.price, 10);
+  assert.equal(selected.stockStatus, 'IN_STOCK');
+  assert.equal(selected.provenance.adapterVersion, '1.3.0');
+  assert.match(selected.provenance.sourcePath, /available-variants/);
+});
+
+test('Shopify supplementary evidence can resolve a primary disagreement using the sole live price', async () => {
   const primary = artifact(
     'https://fixture-shop.example/products/widget',
     `<meta property="og:price:currency" content="USD"><script>Shopify.theme={}</script>
      <script type="application/ld+json">${JSON.stringify({
        '@context':'https://schema.org', '@type':'Product',
        offers:[
-         {'@type':'Offer',price:10,priceCurrency:'USD',availability:'https://schema.org/InStock'},
-         {'@type':'Offer',price:20,priceCurrency:'USD',availability:'https://schema.org/InStock'},
+         {'@type':'Offer',price:14.95,priceCurrency:'USD',availability:'https://schema.org/InStock'},
+         {'@type':'Offer',price:29.95,priceCurrency:'USD',availability:'https://schema.org/OutOfStock'},
        ],
      })}</script>`,
   );
@@ -88,17 +141,23 @@ test('Shopify supplementary evidence can resolve a primary disagreement', async 
   const result = await extractWithAdapterSupplements(primary, async (request) => {
     seen.push(request.url);
     return artifact(request.url, JSON.stringify({
-      price:1500, price_varies:false, available:true,
-      variants:[{id:1,price:1500,available:true}],
+      price:1495,
+      price_varies:true,
+      available:true,
+      variants:[
+        {id:1,price:1495,available:true},
+        {id:2,price:2995,available:false},
+      ],
     }));
   });
   const selected = selectAdapterCandidate(result.candidates);
   assert.deepEqual(seen, ['https://fixture-shop.example/products/widget.js']);
-  assert.equal(selected.price, 15);
-  assert.equal(selected.provenance.adapterVersion, '1.2.0');
+  assert.equal(selected.price, 14.95);
+  assert.equal(selected.provenance.adapterVersion, '1.3.0');
+  assert.match(selected.provenance.sourcePath, /available-variants/);
 });
 
-test('Shopify Ajax refuses ambiguous variant prices without explicit variant', async () => {
+test('Shopify Ajax still refuses ambiguous prices among currently available variants', async () => {
   const primary = artifact(
     'https://fixture-shop.example/products/widget',
     '<meta property="og:price:currency" content="USD"><script>Shopify.theme={}</script>',
@@ -110,7 +169,7 @@ test('Shopify Ajax refuses ambiguous variant prices without explicit variant', a
   assert.throws(() => selectAdapterCandidate(result.candidates), (error: unknown) => (error as {code?:string}).code === 'PARSE_FAILED');
 });
 
-test('Shopify Ajax may select explicitly requested variant', async () => {
+test('Shopify Ajax may select explicitly requested sold-out variant', async () => {
   const primary = artifact(
     'https://fixture-shop.example/products/widget?variant=22',
     '<meta property="og:price:currency" content="USD"><script>Shopify.theme={}</script>',
