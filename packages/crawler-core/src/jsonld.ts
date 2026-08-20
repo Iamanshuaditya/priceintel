@@ -50,9 +50,20 @@ function objects(value: unknown): Record<string, unknown>[] {
   return [obj, ...nested];
 }
 
-function productType(obj: Record<string, unknown>) {
+function typeIs(obj: Record<string, unknown>, expected: string) {
   const t = obj['@type'];
-  return Array.isArray(t) ? t.some((x) => String(x).toLowerCase() === 'product') : String(t).toLowerCase() === 'product';
+  const normalized = expected.toLowerCase();
+  return Array.isArray(t)
+    ? t.some((x) => String(x).toLowerCase() === normalized)
+    : String(t).toLowerCase() === normalized;
+}
+
+function productType(obj: Record<string, unknown>) {
+  return typeIs(obj, 'Product');
+}
+
+function productGroupType(obj: Record<string, unknown>) {
+  return typeIs(obj, 'ProductGroup');
 }
 
 function offerObjects(value: unknown): Record<string, unknown>[] {
@@ -62,28 +73,74 @@ function offerObjects(value: unknown): Record<string, unknown>[] {
   });
 }
 
+function candidateFromOffer(offer: Record<string, unknown>): ExtractionCandidate | undefined {
+  const rawPrice = offer.price ?? offer.lowPrice;
+  const price = parsePriceUSFirst(rawPrice);
+  const currency = String(offer.priceCurrency ?? '').trim().toUpperCase();
+  if (price === undefined || !/^[A-Z]{3}$/.test(currency)) return undefined;
+  const seller = offer.seller;
+  const sellerName = typeof seller === 'string'
+    ? seller
+    : (seller && typeof seller === 'object' ? String((seller as Record<string,unknown>).name ?? '') : '');
+  return {
+    price,
+    currency,
+    stockStatus: availabilityToStockStatus(offer.availability),
+    sellerName: sellerName || undefined,
+    sourceMethod: 'JSON_LD',
+    confidence: 0.95,
+  };
+}
+
+function productCandidates(product: Record<string, unknown>) {
+  return offerObjects(product.offers)
+    .map(candidateFromOffer)
+    .filter((candidate): candidate is ExtractionCandidate => Boolean(candidate));
+}
+
+function aggregateGroupStock(candidates: ExtractionCandidate[]): StockStatus {
+  if (candidates.some((candidate) => candidate.stockStatus === 'IN_STOCK')) return 'IN_STOCK';
+  if (candidates.length && candidates.every((candidate) => candidate.stockStatus === 'OUT_OF_STOCK')) return 'OUT_OF_STOCK';
+  return 'UNKNOWN';
+}
+
+function productGroupCandidate(group: Record<string, unknown>): ExtractionCandidate | undefined {
+  const variants = objects(group.hasVariant).filter(productType);
+  if (!variants.length) return undefined;
+
+  const selected: ExtractionCandidate[] = [];
+  for (const variant of variants) {
+    const candidates = productCandidates(variant);
+    if (!candidates.length) return undefined;
+    try { selected.push(selectValidatedCandidate(candidates)); }
+    catch { return undefined; }
+  }
+
+  const priceCurrencies = new Set(selected.map((candidate) => `${candidate.price}|${candidate.currency}`));
+  if (priceCurrencies.size !== 1) return undefined;
+  const first = selected[0];
+  const sellers = new Set(selected.map((candidate) => candidate.sellerName).filter(Boolean));
+  return {
+    price:first.price,
+    currency:first.currency,
+    stockStatus:aggregateGroupStock(selected),
+    sellerName:sellers.size === 1 ? [...sellers][0] : undefined,
+    sourceMethod:'JSON_LD',
+    confidence:Math.min(...selected.map((candidate) => candidate.confidence), 0.95),
+  };
+}
+
 export function extractJsonLdCandidates(html: string): ExtractionCandidate[] {
   const scripts = [...html.matchAll(/<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)];
   const candidates: ExtractionCandidate[] = [];
   for (const match of scripts) {
     let parsed: unknown;
     try { parsed = JSON.parse(match[1]); } catch { continue; }
-    for (const product of objects(parsed).filter(productType)) {
-      for (const offer of offerObjects(product.offers)) {
-        const rawPrice = offer.price ?? offer.lowPrice;
-        const price = parsePriceUSFirst(rawPrice);
-        const currency = String(offer.priceCurrency ?? '').trim().toUpperCase();
-        if (price === undefined || !/^[A-Z]{3}$/.test(currency)) continue;
-        const seller = offer.seller;
-        const sellerName = typeof seller === 'string' ? seller : (seller && typeof seller === 'object' ? String((seller as Record<string,unknown>).name ?? '') : '');
-        candidates.push({
-          price, currency,
-          stockStatus: availabilityToStockStatus(offer.availability),
-          sellerName: sellerName || undefined,
-          sourceMethod: 'JSON_LD',
-          confidence: 0.95,
-        });
-      }
+    const roots = objects(parsed);
+    for (const product of roots.filter(productType)) candidates.push(...productCandidates(product));
+    for (const group of roots.filter(productGroupType)) {
+      const candidate = productGroupCandidate(group);
+      if (candidate) candidates.push(candidate);
     }
   }
   const unique = new Map(candidates.map((c) => [`${c.price}|${c.currency}|${c.stockStatus}|${c.sellerName ?? ''}`, c]));

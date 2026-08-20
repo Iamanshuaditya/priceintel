@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { extractJsonLdCandidates, parsePriceUSFirst, selectValidatedCandidate } from '../src/jsonld.ts';
 
 function page(offer: string) { return `<html><script type="application/ld+json">{"@context":"https://schema.org","@type":"Product","name":"X","offers":${offer}}</script></html>`; }
+function structured(value: unknown) { return `<html><script type="application/ld+json">${JSON.stringify(value)}</script></html>`; }
 
 test('extracts normalized JSON-LD price, currency, stock and seller', () => {
   const [candidate] = extractJsonLdCandidates(page('{"@type":"Offer","price":"$1,299.90","priceCurrency":"usd","availability":"https://schema.org/InStock","seller":{"name":"Shop"}}'));
@@ -17,6 +18,48 @@ test('out of stock is normalized', () => {
 test('missing availability remains UNKNOWN instead of inventing stock', () => {
   const [candidate] = extractJsonLdCandidates(page('{"@type":"Offer","price":"90.00","priceCurrency":"USD"}'));
   assert.equal(candidate.stockStatus, 'UNKNOWN');
+});
+
+test('ProductGroup aggregates same-price variants and reports group availability', () => {
+  const html = structured({
+    '@context':'https://schema.org',
+    '@type':'ProductGroup',
+    name:'Grouped shirt',
+    variesBy:['size'],
+    hasVariant:[
+      { '@type':'Product', size:'S', offers:{ '@type':'Offer', price:'25.20', priceCurrency:'USD', availability:'https://schema.org/OutOfStock' } },
+      { '@type':'Product', size:'M', offers:{ '@type':'Offer', price:'25.20', priceCurrency:'USD', availability:'https://schema.org/InStock' } },
+    ],
+  });
+  const candidates = extractJsonLdCandidates(html);
+  assert.equal(candidates.length, 1);
+  assert.equal(candidates[0].price, 25.2);
+  assert.equal(candidates[0].currency, 'USD');
+  assert.equal(candidates[0].stockStatus, 'IN_STOCK');
+});
+
+test('ProductGroup refuses variant price ambiguity', () => {
+  const html = structured({
+    '@context':'https://schema.org',
+    '@type':'ProductGroup',
+    hasVariant:[
+      { '@type':'Product', offers:{ '@type':'Offer', price:'49', priceCurrency:'USD', availability:'https://schema.org/InStock' } },
+      { '@type':'Product', offers:{ '@type':'Offer', price:'59', priceCurrency:'USD', availability:'https://schema.org/InStock' } },
+    ],
+  });
+  assert.equal(extractJsonLdCandidates(html).length, 0);
+});
+
+test('ProductGroup refuses incomplete variant offer coverage', () => {
+  const html = structured({
+    '@context':'https://schema.org',
+    '@type':'ProductGroup',
+    hasVariant:[
+      { '@type':'Product', offers:{ '@type':'Offer', price:'49', priceCurrency:'USD', availability:'https://schema.org/InStock' } },
+      { '@type':'Product', size:'M' },
+    ],
+  });
+  assert.equal(extractJsonLdCandidates(html).length, 0);
 });
 
 test('US-first price parser accepts US grouping but rejects comma-decimal ambiguity', () => {
