@@ -1,8 +1,8 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { chromium } from '@playwright/test';
+import { chromium, type Page } from '@playwright/test';
 import { browserContextSecurityOptions, enforceBrowserHttpRoute } from '../packages/crawler-core/src/browser-network-policy.ts';
 
-interface AuditEntry { id:string; url:string }
+interface AuditEntry { id:string; url:string; countryCode?:string }
 
 function arg(name: string, fallback: string) {
   const index = process.argv.indexOf(name);
@@ -19,6 +19,38 @@ function priceLines(text: string) {
     if (seen.size >= 30) break;
   }
   return [...seen];
+}
+
+async function applyShopifyCountry(page: Page, countryCode: string) {
+  const navigation = page.waitForNavigation({ waitUntil:'domcontentloaded', timeout:8_000 }).catch(() => null);
+  const submitted = await page.evaluate((requestedCountry) => {
+    const forms = [...document.querySelectorAll('form')].filter((form) => {
+      try { return new URL(form.action || location.href, location.href).pathname.endsWith('/localization'); }
+      catch { return false; }
+    });
+    for (const form of forms) {
+      const control = form.querySelector<HTMLElement>('[name="country_code"]');
+      if (!control) continue;
+      if (control instanceof HTMLSelectElement) {
+        const option = [...control.options].find((item) => item.value.toUpperCase() === requestedCountry.toUpperCase());
+        if (!option) continue;
+        control.value = option.value;
+        control.dispatchEvent(new Event('change', { bubbles:true }));
+      } else if (control instanceof HTMLInputElement) {
+        control.value = requestedCountry;
+      } else {
+        continue;
+      }
+      form.requestSubmit();
+      return true;
+    }
+    return false;
+  }, countryCode);
+  if (submitted) {
+    await navigation;
+    await page.waitForTimeout(1_000);
+  }
+  return submitted;
 }
 
 const corpusPath = arg('--corpus', 'tests/live-canary/shopify-truth-audit.json');
@@ -55,6 +87,7 @@ for (const entry of corpus) {
   try {
     const response = await page.goto(entry.url, { waitUntil:'domcontentloaded', timeout:30_000 });
     await page.waitForTimeout(1_500);
+    const countryApplied = entry.countryCode ? await applyShopifyCountry(page, entry.countryCode) : false;
     const bodyText = await page.locator('body').innerText({ timeout:5_000 });
     const h1 = await page.locator('h1').first().innerText({ timeout:2_000 }).catch(() => '');
     const selectOptions = await page.locator('select').evaluateAll((selects) => selects.slice(0, 12).map((select) => ({
@@ -79,6 +112,8 @@ for (const entry of corpus) {
     attempts.push({
       id:entry.id,
       requestedUrl:entry.url,
+      requestedCountryCode:entry.countryCode,
+      countryApplied,
       finalUrl:page.url(),
       status:response?.status(),
       title:await page.title(),
@@ -93,6 +128,7 @@ for (const entry of corpus) {
     attempts.push({
       id:entry.id,
       requestedUrl:entry.url,
+      requestedCountryCode:entry.countryCode,
       finalUrl:page.url(),
       error:error instanceof Error ? error.message : String(error),
       durationMs:Date.now() - started,
@@ -112,6 +148,8 @@ for (const attempt of attempts as Array<Record<string, unknown>>) {
     `## ${attempt.id}`,
     '',
     `- HTTP: ${attempt.status ?? '—'}`,
+    `- Requested country: ${attempt.requestedCountryCode ?? 'site/browser default'}`,
+    `- Country localization applied: ${attempt.countryApplied ?? false}`,
     `- Final URL: ${attempt.finalUrl ?? '—'}`,
     `- H1: ${attempt.h1 ?? '—'}`,
     `- Price lines: ${JSON.stringify(attempt.priceLines ?? [])}`,
@@ -122,6 +160,6 @@ for (const attempt of attempts as Array<Record<string, unknown>>) {
     '',
   );
 }
-markdown.push('> This browser run is an independent test oracle over fixed known URLs. Screenshots, visible page state, and verifier review establish truth; extracted priceLines/control metadata are supporting evidence only. It does not feed production observations and is not a production browser-fallback path.', '');
+markdown.push('> This browser run is an independent test oracle over fixed known URLs. Screenshots, visible page state, and verifier review establish truth; extracted priceLines/control metadata are supporting evidence only. Requested storefront country is applied only through the site\'s own Shopify localization form. It does not feed production observations and is not a production browser-fallback path.', '');
 await writeFile(`${outputDir}/audit.md`, markdown.join('\n'));
 console.log(markdown.join('\n'));
