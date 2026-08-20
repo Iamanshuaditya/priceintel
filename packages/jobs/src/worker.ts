@@ -15,7 +15,7 @@ export interface ProcessorHooks {
 }
 
 function failureHealth(code: string) {
-  if (code === 'MARKET_MISMATCH' || code === 'SOURCE_NOT_APPROVED') return 'NEEDS_REVIEW' as const;
+  if (code === 'MARKET_MISMATCH' || code === 'SOURCE_NOT_APPROVED' || code === 'SOURCE_REVIEW_REQUIRED') return 'NEEDS_REVIEW' as const;
   if (code === 'PARSE_FAILED' || code === 'CANDIDATE_DISAGREEMENT') return 'PARSE_FAILED' as const;
   return 'DEGRADED' as const;
 }
