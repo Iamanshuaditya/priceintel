@@ -1,3 +1,4 @@
+import { assertAutomatedSourceAccess } from '../../../packages/crawler-core/src/source-access-policy.ts';
 import { secureFetch } from '../../../packages/crawler-core/src/url-policy.ts';
 import type { HtmlFetchOptions } from '../../../packages/crawler-core/src/crawl.ts';
 import { createDatabasePool } from '../../../packages/db/src/index.ts';
@@ -10,6 +11,7 @@ if (process.env.WORKER_AUTO_MIGRATE === '1') await migrateApplication(pool);
 
 const fetchHtml = async (url: string, options: HtmlFetchOptions = {}) => {
   const { response, finalUrl } = await secureFetch(url, {
+    authorizeTarget:assertAutomatedSourceAccess,
     timeoutMs:options.timeoutMs,
     maxResponseBytes:options.maxResponseBytes,
   });
