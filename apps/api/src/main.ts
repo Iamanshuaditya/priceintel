@@ -7,7 +7,11 @@ const pool = createDatabasePool();
 const queue = createCrawlQueue();
 if (process.env.API_AUTO_MIGRATE === '1') await migrateApplication(pool);
 
-const app = createApiServer({ pool, queue });
+const app = createApiServer({
+  pool,
+  queue,
+  secureCookies: process.env.NODE_ENV === 'production' && process.env.COOKIE_SECURE !== '0',
+});
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.API_HOST ?? '0.0.0.0';
 const base = await app.listen(port, host);

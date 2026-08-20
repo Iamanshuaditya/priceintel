@@ -7,7 +7,7 @@ export async function migrateApplication(pool: Pool) {
 
 export async function truncateApplication(pool: Pool) {
   await pool.query(`
-    TRUNCATE sessions, memberships, users, notification_outbox, change_events,
+    TRUNCATE auth_rate_limits, sessions, memberships, users, notification_outbox, change_events,
       price_observations, crawl_runs, competitor_listings, products, workspaces CASCADE
   `);
 }
