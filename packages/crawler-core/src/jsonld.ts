@@ -1,11 +1,11 @@
-import type { StockStatus } from '../../domain/src/index.ts';
+import type { SourceMethod, StockStatus } from '../../domain/src/index.ts';
 
 export interface ExtractionCandidate {
   price: number;
   currency: string;
   stockStatus: StockStatus;
   sellerName?: string;
-  sourceMethod: 'JSON_LD';
+  sourceMethod: SourceMethod;
   confidence: number;
 }
 
@@ -36,9 +36,9 @@ export function parsePriceUSFirst(value: unknown): number | undefined {
 
 export function availabilityToStockStatus(value: unknown): StockStatus {
   if (typeof value !== 'string') return 'UNKNOWN';
-  const v = value.toLowerCase();
-  if (v.includes('outofstock') || v.includes('soldout') || v.includes('discontinued')) return 'OUT_OF_STOCK';
-  if (v.includes('instock') || v.includes('limitedavailability')) return 'IN_STOCK';
+  const v = value.toLowerCase().replace(/[^a-z]/g, '');
+  if (v.includes('outofstock') || v.includes('soldout') || v.includes('discontinued') || v === 'unavailable') return 'OUT_OF_STOCK';
+  if (v.includes('instock') || v.includes('limitedavailability') || v === 'available') return 'IN_STOCK';
   return 'UNKNOWN';
 }
 
@@ -90,7 +90,7 @@ export function extractJsonLdCandidates(html: string): ExtractionCandidate[] {
   return [...unique.values()];
 }
 
-export function selectValidatedCandidate(candidates: ExtractionCandidate[]): ExtractionCandidate {
+export function selectValidatedCandidate<T extends ExtractionCandidate>(candidates: T[]): T {
   if (candidates.length === 0) throw Object.assign(new Error('No valid price candidate'), { code: 'PARSE_FAILED' });
   const bestConfidence = Math.max(...candidates.map((c) => c.confidence));
   const best = candidates.filter((c) => c.confidence === bestConfidence);

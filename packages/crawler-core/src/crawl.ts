@@ -1,5 +1,5 @@
-import { extractJsonLdCandidates, selectValidatedCandidate } from './jsonld.ts';
 import type { PriceObservation } from '../../domain/src/index.ts';
+import { extractWithAdapters, selectAdapterCandidate } from './adapters/registry.ts';
 
 export interface CrawlInput {
   workspaceId: string;
@@ -9,12 +9,28 @@ export interface CrawlInput {
   crawlRunId: string;
   now?: Date;
 }
-export type HtmlFetcher = (url: string) => Promise<{ html: string; finalUrl?: string }>;
+
+export type HtmlFetcher = (url: string) => Promise<{
+  html: string;
+  finalUrl?: string;
+  status?: number;
+  contentType?: string;
+}>;
 
 export async function crawlStructuredProduct(input: CrawlInput, fetchHtml: HtmlFetcher): Promise<PriceObservation> {
   const fetchedAt = input.now ?? new Date();
-  const { html } = await fetchHtml(input.url);
-  const candidate = selectValidatedCandidate(extractJsonLdCandidates(html));
+  const fetched = await fetchHtml(input.url);
+  const artifact = {
+    requestedUrl: input.url,
+    finalUrl: fetched.finalUrl ?? input.url,
+    html: fetched.html,
+    fetchedAt,
+    status: fetched.status,
+    contentType: fetched.contentType,
+    bytesDownloaded: Buffer.byteLength(fetched.html),
+  };
+  const extraction = extractWithAdapters(artifact);
+  const candidate = selectAdapterCandidate(extraction.candidates);
   return {
     id: `obs_${input.crawlRunId}`,
     workspaceId: input.workspaceId,
@@ -26,8 +42,8 @@ export async function crawlStructuredProduct(input: CrawlInput, fetchHtml: HtmlF
     price: candidate.price,
     stockStatus: candidate.stockStatus,
     sellerName: candidate.sellerName,
-    sourceMethod: 'JSON_LD',
-    extractorVersion: 'jsonld-v1',
+    sourceMethod: candidate.sourceMethod,
+    extractorVersion: `${candidate.provenance.adapterId}@${candidate.provenance.adapterVersion}`,
     confidence: candidate.confidence,
     crawlRunId: input.crawlRunId,
   };
