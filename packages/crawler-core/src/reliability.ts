@@ -216,6 +216,8 @@ export function decisionTruthSummary(evaluations: DecisionTruthEvaluation[]) {
   const observations = fresh.filter((item) => item.expectation === 'OBSERVATION');
   const producedObservations = observations.filter((item) => item.actualDecision === 'OBSERVATION');
   const correctObservationPrices = producedObservations.filter((item) => item.priceCorrect === true);
+  const wrongExpectedObservationPrices = producedObservations.filter((item) => item.priceCorrect === false);
+  const unexpectedObservations = fresh.filter((item) => item.expectation !== 'OBSERVATION' && item.actualDecision === 'OBSERVATION');
   const abstentions = fresh.filter((item) => item.expectation === 'ABSTAIN_VARIANT_AMBIGUITY');
   const correctAbstentions = abstentions.filter((item) => item.decisionCorrect === true);
   const unavailable = fresh.filter((item) => item.expectation === 'UNAVAILABLE');
@@ -239,7 +241,9 @@ export function decisionTruthSummary(evaluations: DecisionTruthEvaluation[]) {
     expectedBlocked:blocked.length,
     correctBlocked:correctBlocked.length,
     blockedAccuracyPct:pct(correctBlocked.length, blocked.length),
-    falsePriceObservations:producedObservations.filter((item) => item.priceCorrect === false).length,
+    wrongExpectedObservationPrices:wrongExpectedObservationPrices.length,
+    unexpectedObservations:unexpectedObservations.length,
+    falsePriceObservations:wrongExpectedObservationPrices.length + unexpectedObservations.length,
     falseAbstentions:observations.filter((item) => item.actualDecision === 'ABSTAIN').length,
     overallDecisionAccuracyPct:pct(correctAll.length, fresh.length),
   };
