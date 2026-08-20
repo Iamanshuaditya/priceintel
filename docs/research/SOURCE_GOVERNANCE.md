@@ -14,14 +14,49 @@ Each runtime record contains:
 
 - `sourceId`;
 - verified hostname patterns;
+- `appliesToMethods`: which access methods this record governs;
 - status: `APPROVED`, `NOT_APPROVED`, or `REVIEW_REQUIRED`;
-- permitted access methods;
+- `permittedMethods`: which governed methods are actually authorized when the source is approved;
 - permission/review basis;
 - review date and optional review-after date;
 - evidence reference;
 - operational reason.
 
 The initial registry is intentionally version-controlled rather than database-managed so source-policy changes receive ordinary code review, deterministic tests, and immutable Git history.
+
+## Method-aware policy selection
+
+Hostname matching alone is insufficient when one retailer exposes multiple source surfaces under the same DNS tree.
+
+`appliesToMethods` and `permittedMethods` answer different questions:
+
+```text
+appliesToMethods
+→ which policy governs this hostname + access-method request?
+
+permittedMethods
+→ which methods does the approved source actually authorize?
+```
+
+Policy selection therefore uses **hostname + access method**, not array order.
+
+Lowe's is the first concrete overlapping-host example:
+
+```text
+LOWES_PUBLIC_WEB
+  hostnamePatterns = lowes.com, *.lowes.com
+  appliesToMethods = PUBLIC_HTTP, BROWSER
+  status = NOT_APPROVED
+
+LOWES_PARTNER_CATALOG_API
+  hostnamePatterns = apis-b2b.lowes.com
+  appliesToMethods = RETAILER_API
+  status = REVIEW_REQUIRED
+```
+
+A `PUBLIC_HTTP` request to `apis-b2b.lowes.com` is governed by the public-web policy, while a `RETAILER_API` request to the same host is governed by the partner-catalog policy. The result does not depend on registry entry order.
+
+`sourcePolicyConflicts()` deterministically scans the registry for hostname-pattern overlap combined with intersecting `appliesToMethods`. CI requires the conflict set to remain empty. An accidental overlapping policy for the same host/method is therefore a test failure rather than an array-order decision.
 
 ## Verified runtime addressing rule
 
@@ -32,6 +67,8 @@ A source can be documented as conceptually `REVIEW_REQUIRED` while its actual ru
 Target Plus is one explicit example: public evidence establishes a seller/developer integration surface, so its source-review conclusion is `REVIEW_REQUIRED`, but the reviewed public material does not establish the production API hostname/scopes needed for safe runtime matching. `TARGET_PLUS_API` therefore remains documented but intentionally absent from `sourcePolicies` until those facts are verified.
 
 Home Depot supplier/partner data is another example. Public material establishes Supplier Hub onboarding, market insights and operational integration capability, but not a verified PriceIntel-suitable data interface or competitor-intelligence permission. `HOME_DEPOT_SUPPLIER_PARTNER_DATA` is therefore a research-level `REVIEW_REQUIRED` conclusion and is intentionally absent from runtime matching.
+
+Lowe's Marketplace seller APIs are handled the same way: a Mirakl seller integration surface is publicly documented, but the reviewed material does not establish the concrete runtime seller API endpoint PriceIntel should govern. `LOWES_MARKETPLACE_SELLER_API` therefore remains research-level `REVIEW_REQUIRED` and intentionally unrouted.
 
 This prevents source governance from accidentally authorizing, denying, or probing an endpoint inferred from a portal hostname rather than an actual source contract.
 
@@ -44,13 +81,13 @@ The registry distinguishes:
 - `LICENSED_PROVIDER`;
 - `BROWSER`.
 
-An approved source must explicitly permit the method PriceIntel intends to use. Approval of one source/method does not imply approval of another source or another method for the same retailer.
+Approval of one source/method does not imply approval of another source or another method for the same retailer.
 
 ## Runtime behavior
 
-`evaluateAutomatedSourceAccess()` resolves reviewed URL hosts through the registry. `assertAutomatedSourceAccess()` converts a non-approved state into a fail-closed runtime error.
+`evaluateAutomatedSourceAccess()` resolves reviewed URL hosts **for the requested access method** through the registry. `assertAutomatedSourceAccess()` converts a non-approved state into a fail-closed runtime error.
 
-For reviewed runtime sources:
+For a matched runtime source:
 
 - `NOT_APPROVED` -> `SOURCE_NOT_APPROVED` / `MANUAL_REVIEW`;
 - `REVIEW_REQUIRED` -> `SOURCE_REVIEW_REQUIRED` / `MANUAL_REVIEW`;
@@ -60,7 +97,7 @@ Production `secureFetch()` applies the source authorizer before DNS/SSRF validat
 
 ## Migration behavior for unregistered sources
 
-The current generic crawler predates the registry and supports arbitrary retailer URLs, including the accepted Shopify corpus. Therefore an **unmatched URL remains allowed for now** rather than converting this registry rollout into an unplanned global shutdown.
+The current generic crawler predates the registry and supports arbitrary retailer URLs, including the accepted Shopify corpus. Therefore an **unmatched URL/method remains allowed for now** rather than converting this registry rollout into an unplanned global shutdown.
 
 This is a compatibility boundary, not an assertion that every unregistered source has been affirmatively approved.
 
@@ -105,15 +142,18 @@ A source decision should reference the material used for the operational review,
 
 As of 2026-08-21, runtime registry records are:
 
-- `BESTBUY_PUBLIC_WEB` — `NOT_APPROVED`;
-- `WALMART_PUBLIC_WEB` — `NOT_APPROVED`;
-- `WALMART_MARKETPLACE_API` — `REVIEW_REQUIRED`;
-- `TARGET_PUBLIC_WEB` — `NOT_APPROVED`;
-- `HOME_DEPOT_PUBLIC_WEB` — `NOT_APPROVED`.
+- `BESTBUY_PUBLIC_WEB` — `NOT_APPROVED` for `PUBLIC_HTTP/BROWSER`;
+- `WALMART_PUBLIC_WEB` — `NOT_APPROVED` for `PUBLIC_HTTP/BROWSER`;
+- `WALMART_MARKETPLACE_API` — `REVIEW_REQUIRED` for `RETAILER_API`;
+- `TARGET_PUBLIC_WEB` — `NOT_APPROVED` for `PUBLIC_HTTP/BROWSER`;
+- `HOME_DEPOT_PUBLIC_WEB` — `NOT_APPROVED` for `PUBLIC_HTTP/BROWSER`;
+- `LOWES_PUBLIC_WEB` — `NOT_APPROVED` for `PUBLIC_HTTP/BROWSER`;
+- `LOWES_PARTNER_CATALOG_API` — `REVIEW_REQUIRED` for `RETAILER_API` on verified host `apis-b2b.lowes.com`.
 
 Reviewed but intentionally not runtime-routed yet:
 
 - `TARGET_PLUS_API` — `REVIEW_REQUIRED`; exact production API hostname/scopes still need verification;
-- `HOME_DEPOT_SUPPLIER_PARTNER_DATA` — `REVIEW_REQUIRED`; actual interface/agreement/permitted use still need verification.
+- `HOME_DEPOT_SUPPLIER_PARTNER_DATA` — `REVIEW_REQUIRED`; actual interface/agreement/permitted use still need verification;
+- `LOWES_MARKETPLACE_SELLER_API` — `REVIEW_REQUIRED`; seller runtime endpoint/agreement/scope still need verification.
 
-Best Buy parser capability remains dormant/tested while its live source is frozen. Walmart, Target and Home Depot source decisions are documented separately in `docs/research/WALMART_SOURCE_DECISION.md`, `docs/research/TARGET_SOURCE_DECISION.md`, and `docs/research/HOME_DEPOT_SOURCE_DECISION.md`.
+Best Buy parser capability remains dormant/tested while its live source is frozen. Retailer decisions are documented in the corresponding files under `docs/research/`, including `LOWES_SOURCE_DECISION.md`.
