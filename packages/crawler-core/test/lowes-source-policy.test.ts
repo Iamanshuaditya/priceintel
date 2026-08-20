@@ -31,14 +31,14 @@ test('source registry has no hostname/method ambiguity and every policy has an e
 });
 
 test('conflict detector rejects overlapping host policies with intersecting method scope', () => {
-  const base = {
+  const base: Omit<SourcePolicy,'sourceId'|'hostnamePatterns'|'appliesToMethods'> = {
     status:'NOT_APPROVED',
     permittedMethods:[],
     basis:'PUBLIC_TERMS_REVIEW',
     reviewedAt:'2026-08-21',
     evidenceReference:'fixture.md',
     reason:'fixture',
-  } as const;
+  };
   const fixtures: SourcePolicy[] = [
     {
       ...base,
