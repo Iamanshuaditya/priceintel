@@ -38,26 +38,76 @@ Cookie-authenticated unsafe methods require a same-origin `Origin` header. Cross
 
 Login/register attempts are rate-limited before unbounded scrypt work, reducing the ability to turn password hashing into a CPU-exhaustion endpoint.
 
-### Crawl identity
+### Crawl identity and configuration authority
 
 Stable crawl job keys cannot be rebound to another crawl identity. Manual crawl state is persisted before enqueue so the UI follows database-backed crawl identity rather than trusting BullMQ as the business authority.
 
+BullMQ now carries only:
+
+- `workspaceId`;
+- `listingId`;
+- `crawlRunId`;
+- `jobKey`.
+
+The queue does not carry authoritative URL, product ID, currency, country, or locale. `enqueueCrawl()` reconstructs the message from the four identity fields, and the worker reloads current crawl configuration from PostgreSQL after claiming the run.
+
+This protects against stale queued configuration and reduces the damage of queue-message tampering: Redis cannot silently redirect a valid listing crawl to another URL or market contract simply by changing non-authoritative payload fields.
+
+### Market/currency integrity boundary
+
+`competitor_listings` persists:
+
+- non-null `expected_currency`;
+- optional `market_country`;
+- optional `locale`.
+
+For API-created listings, expected currency defaults from the parent product unless explicitly configured.
+
+The current production invariant is intentionally narrower than full localization control:
+
+`candidate currency == expected_currency` is required before a candidate can become a verified observation.
+
+The worker checks this against PostgreSQL-loaded configuration before persistence, and `persistObservationAndEffects()` repeats it while holding the listing row lock. An unexpected currency becomes `MARKET_MISMATCH` with `NEEDS_REVIEW`.
+
+A market mismatch may update crawl-attempt/failure metadata, but it cannot create:
+
+- a verified observation;
+- a current-price/current-currency/current-stock mutation;
+- a new `last_successful_crawl_at`;
+- a change event;
+- notification-outbox intent.
+
+This prevents worker geography, retailer geolocation, cookies, or a changed storefront default from silently turning a USD listing into a CAD observation and then being misinterpreted as a price change.
+
+`market_country` and `locale` currently preserve intended context but are not themselves a guarantee that every retailer request is localized. Retailer-specific localization must be implemented and verified separately; until then, the currency invariant fails closed.
+
+The dedicated real PostgreSQL/Redis/BullMQ regression mutates a listing URL after enqueue, proves the worker fetches the new PostgreSQL URL, returns a CAD candidate for a USD contract, and confirms the historical USD observation/current state/change/outbox remain untouched while only `MARKET_MISMATCH` failure metadata advances.
+
+### Reliability/oracle integrity
+
+Production and live canary share `executeExtractionPipeline()`, reducing the risk that the measurement system silently uses a different extraction policy.
+
+Decision truth distinguishes expected observations, variant abstentions, unavailable pages, and blocked states. Unsafe observations against abstention/unavailable/blocked truth are counted explicitly rather than hidden inside coverage metrics.
+
+Browser truth-audit output is verifier evidence, not production data. Screenshots and visible page state are reviewed independently. The Shopify reliability loop preserved a case where the browser oracle itself was wrong: a focused visible-control recheck and Shopify source metadata proved Scindapsus had two live CAD prices, so truth was corrected to abstention instead of weakening production logic.
+
 ## Browser crawler security gate — still open
 
-The operator UI uses Playwright only in deterministic E2E. A production browser crawler/fallback is not yet enabled.
+The operator UI and reliability verifier use Playwright, but a production browser crawler/fallback is not yet enabled.
 
-Before any production `page.goto(userUrl)` path, the browser worker needs a separate network policy because page scripts, images, iframes, XHR/fetch, redirects, websockets, and service-worker activity create network surfaces not covered by the HTTP fetcher’s pinned-socket boundary.
+The browser network policy can reject private/local HTTP/WebSocket destinations and service workers are disabled in verifier contexts, but browser interception is not equivalent to the raw HTTP fetcher's socket-level DNS pinning.
 
-Release-blocking requirements for browser crawling:
+Before any production `page.goto(userUrl)` path, browser workers require:
 
-- reject private/local destinations for the initial navigation;
-- intercept subsequent browser-originated requests and reject private/local destinations;
+- reject private/local destinations for initial and subsequent browser requests;
 - revalidate redirects;
-- define websocket and service-worker policy;
-- isolate browser contexts/sessions across tenants/jobs;
-- cap navigation/resource budgets;
-- combine application controls with restrictive deployment egress where possible;
-- regression-test hostile pages attempting internal-network requests.
+- explicit websocket and service-worker policy;
+- isolated browser contexts/sessions across tenants/jobs;
+- navigation/request/byte/time budgets;
+- restrictive deployment-level private-network egress denial;
+- hostile-page regressions attempting internal-network access.
+
+Explicit retailer challenge pages remain `BLOCKED`; production browser fallback must not become a mechanism for bypassing access controls or anti-bot protections.
 
 ## Other open security work
 
@@ -66,4 +116,5 @@ Release-blocking requirements for browser crawling:
 - dependency vulnerability/scanning policy beyond lockfile reproducibility;
 - CSV/formula-injection controls if CSV export/import is added;
 - evidence retention/redaction controls before storing substantial HTML/screenshots/headers;
-- production proxy credential/session isolation if retailer proxies are introduced.
+- production proxy credential/session isolation if retailer proxies are introduced;
+- retailer-specific market selection controls beyond the current fail-closed expected-currency invariant.
