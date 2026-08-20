@@ -25,6 +25,41 @@ export interface CrawlRunIdentity {
   listingId: string;
 }
 
+export interface CrawlListingConfig {
+  workspaceId: string;
+  listingId: string;
+  productId: string;
+  url: string;
+  expectedCurrency: string;
+  marketCountry?: string;
+  locale?: string;
+}
+
+export async function loadCrawlListingConfig(pool: Pool, workspaceId: string, listingId: string): Promise<CrawlListingConfig> {
+  const result = await pool.query<{
+    product_id:string;
+    url:string;
+    expected_currency:string;
+    market_country:string|null;
+    locale:string|null;
+  }>(`
+    SELECT product_id,url,expected_currency,market_country,locale
+    FROM competitor_listings
+    WHERE id=$1 AND workspace_id=$2
+  `, [listingId,workspaceId]);
+  const row = result.rows[0];
+  if (!row) throw Object.assign(new Error('Listing crawl configuration not found'), { code:'LISTING_CONFIG_MISSING' });
+  return {
+    workspaceId,
+    listingId,
+    productId:row.product_id,
+    url:row.url,
+    expectedCurrency:row.expected_currency.trim().toUpperCase(),
+    marketCountry:row.market_country?.trim().toUpperCase() || undefined,
+    locale:row.locale?.trim() || undefined,
+  };
+}
+
 export async function claimCrawlRun(pool: Pool, input: CrawlRunIdentity, at = new Date()) {
   const result = await pool.query<{
     id: string; job_key: string; workspace_id: string; listing_id: string; status: 'RUNNING' | 'SUCCEEDED' | 'FAILED'; attempt: number;
@@ -88,14 +123,22 @@ export async function persistObservationAndEffects(pool: Pool, observation: Pric
     await client.query('BEGIN');
     const listingLock = await client.query<{
       product_id:string;
+      expected_currency:string;
       last_crawl_at: Date | null;
     }>(
-      'SELECT product_id, last_crawl_at FROM competitor_listings WHERE id=$1 AND workspace_id=$2 FOR UPDATE',
+      'SELECT product_id, expected_currency, last_crawl_at FROM competitor_listings WHERE id=$1 AND workspace_id=$2 FOR UPDATE',
       [observation.competitorListingId, observation.workspaceId],
     );
     if (listingLock.rowCount !== 1) throw new Error('Listing not found in workspace');
     const listing = listingLock.rows[0];
     if (listing.product_id !== observation.productId) throw new Error('Observation product/listing mismatch');
+    const expectedCurrency = listing.expected_currency.trim().toUpperCase();
+    if (observation.currency.toUpperCase() !== expectedCurrency) {
+      throw Object.assign(
+        new Error(`Observed currency ${observation.currency} does not match listing market currency ${expectedCurrency}`),
+        { code:'MARKET_MISMATCH' },
+      );
+    }
 
     const inserted = await client.query<{id:string}>(`
       INSERT INTO price_observations (
@@ -234,14 +277,21 @@ export async function recordCrawlFailure(
 
 export async function seedCatalog(pool: Pool, input: {
   workspaceId:string; workspaceName:string; productId:string; sku:string; title:string; currency:string;
-  listingId:string; url:string; retailer:string;
+  listingId:string; url:string; retailer:string; expectedCurrency?:string; marketCountry?:string; locale?:string;
 }) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    const expectedCurrency = (input.expectedCurrency ?? input.currency).toUpperCase();
     await client.query('INSERT INTO workspaces(id,name) VALUES($1,$2)', [input.workspaceId,input.workspaceName]);
     await client.query('INSERT INTO products(id,workspace_id,sku,title,currency) VALUES($1,$2,$3,$4,$5)', [input.productId,input.workspaceId,input.sku,input.title,input.currency]);
-    await client.query(`INSERT INTO competitor_listings(id,workspace_id,product_id,url,retailer) VALUES($1,$2,$3,$4,$5)`, [input.listingId,input.workspaceId,input.productId,input.url,input.retailer]);
+    await client.query(`
+      INSERT INTO competitor_listings(id,workspace_id,product_id,url,retailer,expected_currency,market_country,locale)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8)
+    `, [
+      input.listingId,input.workspaceId,input.productId,input.url,input.retailer,expectedCurrency,
+      input.marketCountry?.toUpperCase() ?? null,input.locale ?? null,
+    ]);
     await client.query('COMMIT');
   } catch (error) {
     await client.query('ROLLBACK');
