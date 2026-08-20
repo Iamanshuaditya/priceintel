@@ -5,9 +5,7 @@ export const CRAWL_QUEUE_NAME = 'priceintel-crawl';
 
 export interface CrawlJobData {
   workspaceId: string;
-  productId: string;
   listingId: string;
-  url: string;
   crawlRunId: string;
   jobKey: string;
 }
