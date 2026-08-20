@@ -50,8 +50,7 @@ test('real worker process death after DB commit replays without duplicate observ
   assert.equal((await persistObservationAndEffects(pool, baseline)).inserted, true);
 
   const job = await enqueueCrawl(queue, {
-    workspaceId:'ws_crash', productId:'prod_crash', listingId:'listing_crash', url:'https://example.com/product',
-    crawlRunId:'run_change', jobKey:'job-change',
+    workspaceId:'ws_crash', listingId:'listing_crash', crawlRunId:'run_change', jobKey:'job-change',
   }, { attempts:1, removeOnComplete:false, removeOnFail:false });
 
   const child = spawn(process.execPath, [
