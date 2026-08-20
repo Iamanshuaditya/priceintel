@@ -89,12 +89,12 @@
     "note": "Browser verifier explicitly selected Shopify country CA before review; visible state shows $7.95 CAD."
   },
   "missboon-scindapsus-mount-salak": {
-    "expectation": "OBSERVATION",
-    "visiblePrice": 14.95,
+    "expectation": "ABSTAIN_VARIANT_AMBIGUITY",
+    "variantPrices": [14.95, 26.95],
     "currency": "CAD",
-    "expectedVariant": "4-inch live/default size",
-    "verifiedAt": "2026-08-20T16:47:26Z",
-    "note": "CA-localized browser state shows 4-inch at $14.95 CAD. The 6-inch control could not be activated in the targeted probe, so it is not treated as a second live price for product-level ambiguity."
+    "reason": "The CA storefront exposes selectable 4-inch and 6-inch variants at different prices and the URL does not identify a variant.",
+    "verifiedAt": "2026-08-20T17:01:33Z",
+    "note": "Truth amendment after focused browser recheck run 32395208368 / artifact 9416381316 and source diagnostic run 32394981279 / artifact 9416281097. Clicking the visible 6-inch label selected variant 46236746776742 and changed the visible price from $14.95 CAD to $26.95 CAD; Shopify product JSON independently reports both variants available=true. The earlier failed input.check probe was a verifier interaction bug."
   },
   "missboon-monstera-aurea": {
     "expectation": "OBSERVATION",
