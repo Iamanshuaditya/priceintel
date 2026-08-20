@@ -138,7 +138,7 @@ test('database composite foreign keys reject cross-workspace listing/product wir
   await pool.query("INSERT INTO workspaces(id,name) VALUES ('ws_a','A'),('ws_b','B')");
   await pool.query("INSERT INTO products(id,workspace_id,sku,title,currency) VALUES ('prod_a','ws_a','A-1','A','USD')");
   await assert.rejects(
-    pool.query("INSERT INTO competitor_listings(id,workspace_id,product_id,url,retailer) VALUES ('bad','ws_b','prod_a','https://example.com','example.com')"),
+    pool.query("INSERT INTO competitor_listings(id,workspace_id,product_id,url,retailer,expected_currency) VALUES ('bad','ws_b','prod_a','https://example.com','example.com','USD')"),
     /foreign key/i,
   );
 });
