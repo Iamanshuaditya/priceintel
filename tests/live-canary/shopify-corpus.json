@@ -1,0 +1,142 @@
+[
+  {
+    "id": "gymshark-power-shirt",
+    "retailer": "Gymshark",
+    "url": "https://www.gymshark.com/products/gymshark-power-t-shirt-ss-tops-blue-ss26",
+    "expectedAdapter": "gymshark",
+    "preferredFallback": "MANUAL_REVIEW"
+  },
+  {
+    "id": "gymshark-pocket-leggings",
+    "retailer": "Gymshark",
+    "url": "https://row.gymshark.com/products/gymshark-pocket-leggings-leggings",
+    "expectedAdapter": "gymshark",
+    "preferredFallback": "MANUAL_REVIEW"
+  },
+  {
+    "id": "mollyjogger-scrimshaw-kit",
+    "retailer": "Mollyjogger",
+    "url": "https://www.mollyjogger.com/products/scrimshaw-heirloom-knife-kit",
+    "expectedAdapter": "shopify",
+    "preferredFallback": "SUPPLEMENTARY_HTTP"
+  },
+  {
+    "id": "mollyjogger-fish-knife",
+    "retailer": "Mollyjogger",
+    "url": "https://www.mollyjogger.com/products/fish-knife",
+    "expectedAdapter": "shopify",
+    "preferredFallback": "SUPPLEMENTARY_HTTP"
+  },
+  {
+    "id": "mollyjogger-red-plaid-cap",
+    "retailer": "Mollyjogger",
+    "url": "https://www.mollyjogger.com/products/red-plaid-jones-cap",
+    "expectedAdapter": "shopify",
+    "preferredFallback": "SUPPLEMENTARY_HTTP"
+  },
+  {
+    "id": "mollyjogger-stag-matches",
+    "retailer": "Mollyjogger",
+    "url": "https://www.mollyjogger.com/products/stag-safety-matches",
+    "expectedAdapter": "shopify",
+    "preferredFallback": "SUPPLEMENTARY_HTTP"
+  },
+  {
+    "id": "dowse-ice-cream-cup",
+    "retailer": "DOWSE",
+    "url": "https://dowsedesign.co.uk/collections/made-in-japan/products/not-paper-ice-cream-cup",
+    "expectedAdapter": "shopify",
+    "preferredFallback": "SUPPLEMENTARY_HTTP"
+  },
+  {
+    "id": "dowse-zero-japan-mugs",
+    "retailer": "DOWSE",
+    "url": "https://dowsedesign.co.uk/collections/made-in-japan/products/zero-japan-mugs-various-colours",
+    "expectedAdapter": "shopify",
+    "preferredFallback": "SUPPLEMENTARY_HTTP"
+  },
+  {
+    "id": "dowse-japanese-serving-jar",
+    "retailer": "DOWSE",
+    "url": "https://dowsedesign.co.uk/collections/made-in-japan/products/japanese-serving-jar",
+    "expectedAdapter": "shopify",
+    "preferredFallback": "SUPPLEMENTARY_HTTP"
+  },
+  {
+    "id": "dowse-noodle-cup",
+    "retailer": "DOWSE",
+    "url": "https://dowsedesign.co.uk/collections/made-in-japan/products/not-paper-noodle-cup",
+    "expectedAdapter": "shopify",
+    "preferredFallback": "SUPPLEMENTARY_HTTP"
+  },
+  {
+    "id": "missboon-propagation-workshop",
+    "retailer": "Miss Boon",
+    "url": "https://missboon.ca/products/atelier-dinitiation-au-bouturage",
+    "expectedAdapter": "shopify",
+    "preferredFallback": "SUPPLEMENTARY_HTTP"
+  },
+  {
+    "id": "missboon-jungle-feed",
+    "retailer": "Miss Boon",
+    "url": "https://missboon.ca/en/products/engrais-jungle-feed",
+    "expectedAdapter": "shopify",
+    "preferredFallback": "SUPPLEMENTARY_HTTP"
+  },
+  {
+    "id": "missboon-scindapsus-mount-salak",
+    "retailer": "Miss Boon",
+    "url": "https://missboon.ca/en/products/scindapsus-mount-salak-4",
+    "expectedAdapter": "shopify",
+    "preferredFallback": "SUPPLEMENTARY_HTTP"
+  },
+  {
+    "id": "missboon-monstera-aurea",
+    "retailer": "Miss Boon",
+    "url": "https://missboon.ca/en/products/monstera-deliciosa-aurea-6",
+    "expectedAdapter": "shopify",
+    "preferredFallback": "SUPPLEMENTARY_HTTP"
+  },
+  {
+    "id": "horne-desert-two-seater",
+    "retailer": "HORNE",
+    "url": "https://shophorne.com/products/desert-2-seater-pure-boucle",
+    "expectedAdapter": "shopify",
+    "preferredFallback": "SUPPLEMENTARY_HTTP"
+  },
+  {
+    "id": "horne-desert-one-seater",
+    "retailer": "HORNE",
+    "url": "https://shophorne.com/products/desert-1-seater-pure-boucle",
+    "expectedAdapter": "shopify",
+    "preferredFallback": "SUPPLEMENTARY_HTTP"
+  },
+  {
+    "id": "horne-evio-vase-h22",
+    "retailer": "HORNE",
+    "url": "https://shophorne.com/products/evio-vase-h22",
+    "expectedAdapter": "shopify",
+    "preferredFallback": "SUPPLEMENTARY_HTTP"
+  },
+  {
+    "id": "horne-evio-vase-h35",
+    "retailer": "HORNE",
+    "url": "https://shophorne.com/products/evio-vase-h35",
+    "expectedAdapter": "shopify",
+    "preferredFallback": "SUPPLEMENTARY_HTTP"
+  },
+  {
+    "id": "horne-orrith-napkin-rings",
+    "retailer": "HORNE",
+    "url": "https://shophorne.com/products/orrith-napkin-rings-set-of-4",
+    "expectedAdapter": "shopify",
+    "preferredFallback": "SUPPLEMENTARY_HTTP"
+  },
+  {
+    "id": "horne-sama-wooden-bin",
+    "retailer": "HORNE",
+    "url": "https://shophorne.com/products/sama-wooden-bin-35",
+    "expectedAdapter": "shopify",
+    "preferredFallback": "SUPPLEMENTARY_HTTP"
+  }
+]
