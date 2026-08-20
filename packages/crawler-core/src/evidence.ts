@@ -1,5 +1,10 @@
 import { createHash } from 'node:crypto';
 
+export interface JsonSignal {
+  path: string;
+  value: string | number | boolean | null;
+}
+
 export interface ScriptEvidence {
   id?: string;
   type?: string;
@@ -7,6 +12,7 @@ export interface ScriptEvidence {
   bytes: number;
   jsonTopLevelKeys?: string[];
   jsonRoot?: 'object' | 'array' | 'scalar' | 'invalid';
+  commerceSignals?: JsonSignal[];
 }
 
 export interface HtmlDiagnosticEvidence {
@@ -23,17 +29,49 @@ function attribute(tag: string, name: string) {
   return match?.[2];
 }
 
-function jsonShape(body: string) {
+function primitive(value: unknown): value is string | number | boolean | null {
+  return value === null || ['string','number','boolean'].includes(typeof value);
+}
+
+function commerceSignals(value: unknown, maxSignals = 200) {
+  const signals: JsonSignal[] = [];
+  const seen = new Set<string>();
+  const visit = (node: unknown, path: string[], depth: number) => {
+    if (signals.length >= maxSignals || depth > 24 || node === null || typeof node !== 'object') return;
+    if (Array.isArray(node)) {
+      for (let index = 0; index < node.length && signals.length < maxSignals; index += 1) visit(node[index], [...path, String(index)], depth + 1);
+      return;
+    }
+    for (const [key, child] of Object.entries(node as Record<string, unknown>)) {
+      if (signals.length >= maxSignals) break;
+      const nextPath = [...path, key];
+      if (primitive(child) && /(price|currency|availability|stock|compare.?at|sale)/i.test(key)) {
+        const normalized = typeof child === 'string' ? child.slice(0, 100) : child;
+        const signature = `${nextPath.join('.')}|${String(normalized)}`;
+        if (!seen.has(signature)) {
+          seen.add(signature);
+          signals.push({ path:nextPath.join('.'), value:normalized });
+        }
+      } else if (child && typeof child === 'object') visit(child, nextPath, depth + 1);
+    }
+  };
+  visit(value, [], 0);
+  return signals;
+}
+
+function jsonShape(body: string, includeCommerceSignals: boolean) {
   try {
     const parsed = JSON.parse(body) as unknown;
-    if (Array.isArray(parsed)) return { jsonRoot:'array' as const };
+    const signals = includeCommerceSignals ? commerceSignals(parsed) : undefined;
+    if (Array.isArray(parsed)) return { jsonRoot:'array' as const, commerceSignals:signals };
     if (parsed && typeof parsed === 'object') {
       return {
         jsonRoot:'object' as const,
         jsonTopLevelKeys:Object.keys(parsed as Record<string, unknown>).slice(0, 20),
+        commerceSignals:signals,
       };
     }
-    return { jsonRoot:'scalar' as const };
+    return { jsonRoot:'scalar' as const, commerceSignals:signals };
   } catch {
     return { jsonRoot:'invalid' as const };
   }
@@ -55,8 +93,11 @@ export function collectHtmlDiagnosticEvidence(html: string, maxScripts = 60): Ht
     let srcHost: string | undefined;
     if (src) {
       try {
-        srcHost = new URL(src, 'https://diagnostic.invalid').hostname;
-        if (srcHost !== 'diagnostic.invalid') hosts.add(srcHost);
+        const parsed = new URL(src, 'https://diagnostic.invalid');
+        if (parsed.hostname !== 'diagnostic.invalid') {
+          srcHost = parsed.hostname;
+          hosts.add(parsed.hostname);
+        }
       } catch {}
     }
     const entry: ScriptEvidence = {
@@ -66,7 +107,9 @@ export function collectHtmlDiagnosticEvidence(html: string, maxScripts = 60): Ht
       bytes:Buffer.byteLength(body),
     };
     const likelyJson = type?.toLowerCase().includes('json') || Boolean(id && /data|state|payload|props|hydr/i.test(id));
-    if (likelyJson && body.length <= 2 * 1024 * 1024) Object.assign(entry, jsonShape(body.trim()));
+    if (likelyJson && body.length <= 2 * 1024 * 1024) {
+      Object.assign(entry, jsonShape(body.trim(), id === '__NEXT_DATA__'));
+    }
     scripts.push(entry);
   }
 
