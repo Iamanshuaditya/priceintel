@@ -29,9 +29,36 @@ export interface AdapterAttempt {
   errorCode?: string;
 }
 
+export interface SupplementaryRequest {
+  id: string;
+  url: string;
+  purpose: string;
+  sameOrigin?: boolean;
+  maxBytes?: number;
+  timeoutMs?: number;
+}
+
+export interface SupplementaryArtifact extends FetchArtifact {
+  requestId: string;
+  purpose: string;
+}
+
+export interface SupplementaryAttempt {
+  adapterId: string;
+  adapterVersion: string;
+  requestId: string;
+  purpose: string;
+  url: string;
+  status?: number;
+  bytesDownloaded: number;
+  candidateCount: number;
+  errorCode?: string;
+}
+
 export interface AdapterExtractionResult {
   candidates: AdapterCandidate[];
   attempts: AdapterAttempt[];
+  supplementaryAttempts?: SupplementaryAttempt[];
 }
 
 export interface RetailerAdapter {
@@ -40,7 +67,25 @@ export interface RetailerAdapter {
   priority: number;
   canHandle(artifact: FetchArtifact): boolean;
   extract(artifact: FetchArtifact): AdapterCandidate[];
+  supplementaryRequests?(artifact: FetchArtifact, primaryCandidates: AdapterCandidate[]): SupplementaryRequest[];
+  extractSupplementary?(primary: FetchArtifact, artifacts: SupplementaryArtifact[]): AdapterCandidate[];
 }
+
+export interface SupplementaryBudget {
+  maxRequests: number;
+  maxCumulativeBytes: number;
+  maxTotalMs: number;
+  defaultMaxBytes: number;
+  defaultTimeoutMs: number;
+}
+
+export const defaultSupplementaryBudget: SupplementaryBudget = {
+  maxRequests: 2,
+  maxCumulativeBytes: 2 * 1024 * 1024,
+  maxTotalMs: 8_000,
+  defaultMaxBytes: 1024 * 1024,
+  defaultTimeoutMs: 4_000,
+};
 
 export function withProvenance(
   candidate: ExtractionCandidate,

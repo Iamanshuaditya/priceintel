@@ -1,5 +1,6 @@
 import type { PriceObservation } from '../../domain/src/index.ts';
-import { extractWithAdapters, selectAdapterCandidate } from './adapters/registry.ts';
+import { extractWithAdapterSupplements, selectAdapterCandidate } from './adapters/registry.ts';
+import type { FetchArtifact, SupplementaryRequest } from './adapters/types.ts';
 
 export interface CrawlInput {
   workspaceId: string;
@@ -10,26 +11,41 @@ export interface CrawlInput {
   now?: Date;
 }
 
-export type HtmlFetcher = (url: string) => Promise<{
+export interface HtmlFetchOptions {
+  timeoutMs?: number;
+  maxResponseBytes?: number;
+}
+
+export type HtmlFetcher = (url: string, options?: HtmlFetchOptions) => Promise<{
   html: string;
   finalUrl?: string;
   status?: number;
   contentType?: string;
 }>;
 
-export async function crawlStructuredProduct(input: CrawlInput, fetchHtml: HtmlFetcher): Promise<PriceObservation> {
-  const fetchedAt = input.now ?? new Date();
-  const fetched = await fetchHtml(input.url);
-  const artifact = {
-    requestedUrl: input.url,
-    finalUrl: fetched.finalUrl ?? input.url,
+function artifactFromFetch(requestedUrl: string, fetchedAt: Date, fetched: Awaited<ReturnType<HtmlFetcher>>): FetchArtifact {
+  return {
+    requestedUrl,
+    finalUrl: fetched.finalUrl ?? requestedUrl,
     html: fetched.html,
     fetchedAt,
     status: fetched.status,
     contentType: fetched.contentType,
     bytesDownloaded: Buffer.byteLength(fetched.html),
   };
-  const extraction = extractWithAdapters(artifact);
+}
+
+export async function crawlStructuredProduct(input: CrawlInput, fetchHtml: HtmlFetcher): Promise<PriceObservation> {
+  const fetchedAt = input.now ?? new Date();
+  const fetched = await fetchHtml(input.url);
+  const primary = artifactFromFetch(input.url, fetchedAt, fetched);
+  const extraction = await extractWithAdapterSupplements(primary, async (request: SupplementaryRequest) => {
+    const supplemental = await fetchHtml(request.url, {
+      timeoutMs:request.timeoutMs,
+      maxResponseBytes:request.maxBytes,
+    });
+    return artifactFromFetch(request.url, fetchedAt, supplemental);
+  });
   const candidate = selectAdapterCandidate(extraction.candidates);
   return {
     id: `obs_${input.crawlRunId}`,

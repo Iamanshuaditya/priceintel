@@ -1,5 +1,5 @@
 import { availabilityToStockStatus, extractJsonLdCandidates, parsePriceUSFirst } from '../jsonld.ts';
-import type { AdapterCandidate, RetailerAdapter } from './types.ts';
+import type { AdapterCandidate, RetailerAdapter, SupplementaryArtifact, SupplementaryRequest } from './types.ts';
 import { withProvenance } from './types.ts';
 import { attrValue, attribute, hostnameOf, scriptJson } from './helpers.ts';
 
@@ -76,9 +76,89 @@ function openGraphCandidate(html: string, adapter: RetailerAdapter): AdapterCand
   }];
 }
 
+function parseJsonObject(raw: string) {
+  try {
+    const value = JSON.parse(raw) as unknown;
+    return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+  } catch { return undefined; }
+}
+
+function ajaxUrls(primaryUrl: string) {
+  const url = new URL(primaryUrl);
+  const match = url.pathname.match(/^(.*\/products\/)([^/]+?)\/?$/i);
+  if (!match) return undefined;
+  const prefix = match[1];
+  const handle = match[2].replace(/\.js$/i, '');
+  const product = new URL(url.origin);
+  product.pathname = `${prefix}${handle}.js`;
+  const routeRoot = prefix.slice(0, -'products/'.length);
+  const cart = new URL(url.origin);
+  cart.pathname = `${routeRoot}cart.js`;
+  return { product:product.toString(), cart:cart.toString() };
+}
+
+function numberInSubunits(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 0) return value;
+  if (typeof value === 'string' && /^\d+$/.test(value)) return Number(value);
+  return undefined;
+}
+
+function currencyFromSupplements(primary: {html:string}, artifacts: SupplementaryArtifact[]) {
+  const primaryCurrency = shopifyCurrency(primary.html);
+  if (primaryCurrency) return primaryCurrency;
+  const cart = artifacts.find((artifact) => artifact.requestId === 'shopify-cart');
+  if (!cart) return undefined;
+  const parsed = parseJsonObject(cart.html);
+  const currency = typeof parsed?.currency === 'string' ? parsed.currency.trim().toUpperCase() : '';
+  return /^[A-Z]{3}$/.test(currency) ? currency : undefined;
+}
+
+function ajaxProductCandidate(primaryUrl: string, product: Record<string, unknown>, currency: string): AdapterCandidate[] {
+  const variants = Array.isArray(product.variants)
+    ? product.variants.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object' && !Array.isArray(item)))
+    : [];
+  const requestedVariant = new URL(primaryUrl).searchParams.get('variant');
+  let chosen: Record<string, unknown> | undefined;
+  let sourcePath = 'supplementary:GET /products/{handle}.js';
+
+  if (requestedVariant) {
+    chosen = variants.find((variant) => String(variant.id ?? '') === requestedVariant);
+    if (!chosen) return [];
+    sourcePath += `#variant=${requestedVariant}`;
+  } else {
+    const priced = variants
+      .map((variant) => ({ variant, price:numberInSubunits(variant.price) }))
+      .filter((item): item is {variant:Record<string, unknown>;price:number} => item.price !== undefined);
+    const unique = new Set(priced.map((item) => item.price));
+    if (product.price_varies === true || unique.size > 1) return [];
+    if (priced.length) chosen = priced[0].variant;
+  }
+
+  const cents = chosen ? numberInSubunits(chosen.price) : numberInSubunits(product.price);
+  if (cents === undefined) return [];
+  const available = chosen && typeof chosen.available === 'boolean'
+    ? chosen.available
+    : (typeof product.available === 'boolean' ? product.available : undefined);
+  const sellerName = typeof product.vendor === 'string' && product.vendor.trim() ? product.vendor.trim() : undefined;
+
+  return [{
+    price:cents / 100,
+    currency,
+    stockStatus:available === true ? 'IN_STOCK' : available === false ? 'OUT_OF_STOCK' : 'UNKNOWN',
+    sellerName,
+    sourceMethod:'RETAILER_ADAPTER',
+    confidence:0.99,
+    provenance:{
+      adapterId:shopifyAdapter.id,
+      adapterVersion:shopifyAdapter.version,
+      sourcePath,
+    },
+  }];
+}
+
 export const shopifyAdapter: RetailerAdapter = {
   id: 'shopify',
-  version: '1.0.0',
+  version: '1.1.0',
   priority: 60,
   canHandle(artifact) {
     const host = hostnameOf(artifact.finalUrl);
@@ -92,5 +172,37 @@ export const shopifyAdapter: RetailerAdapter = {
       confidence: Math.max(candidate.confidence, 0.97),
     }));
     return [...direct, ...jsonLd, ...openGraphCandidate(artifact.html, shopifyAdapter)];
+  },
+  supplementaryRequests(artifact, primaryCandidates): SupplementaryRequest[] {
+    if (primaryCandidates.length) return [];
+    const urls = ajaxUrls(artifact.finalUrl);
+    if (!urls) return [];
+    const requests: SupplementaryRequest[] = [{
+      id:'shopify-product',
+      url:urls.product,
+      purpose:'Shopify Ajax Product JSON',
+      sameOrigin:true,
+      maxBytes:1024 * 1024,
+      timeoutMs:4_000,
+    }];
+    if (!shopifyCurrency(artifact.html)) {
+      requests.push({
+        id:'shopify-cart',
+        url:urls.cart,
+        purpose:'Shopify presentment currency',
+        sameOrigin:true,
+        maxBytes:256 * 1024,
+        timeoutMs:3_000,
+      });
+    }
+    return requests;
+  },
+  extractSupplementary(primary, artifacts) {
+    const productArtifact = artifacts.find((artifact) => artifact.requestId === 'shopify-product');
+    if (!productArtifact) return [];
+    const product = parseJsonObject(productArtifact.html);
+    const currency = currencyFromSupplements(primary, artifacts);
+    if (!product || !currency) return [];
+    return ajaxProductCandidate(primary.finalUrl, product, currency);
   },
 };
