@@ -76,6 +76,17 @@ export const sourcePolicies: readonly SourcePolicy[] = [
     evidenceReference:'docs/research/TARGET_SOURCE_DECISION.md',
     reason:'Target public-web product/price collection is not approved for PriceIntel automated commercial monitoring under the reviewed public terms',
   },
+  {
+    sourceId:'HOME_DEPOT_PUBLIC_WEB',
+    hostnamePatterns:['homedepot.com','*.homedepot.com'],
+    status:'NOT_APPROVED',
+    permittedMethods:[],
+    basis:'PUBLIC_TERMS_REVIEW',
+    reviewedAt:'2026-08-21',
+    reviewAfter:'2026-11-21',
+    evidenceReference:'docs/research/HOME_DEPOT_SOURCE_DECISION.md',
+    reason:'Home Depot public-web product/price collection is not approved for PriceIntel automated commercial monitoring under the reviewed public terms',
+  },
 ];
 
 function hostnameMatchesPattern(hostname: string, pattern: string) {
