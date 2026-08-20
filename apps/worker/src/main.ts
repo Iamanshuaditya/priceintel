@@ -5,7 +5,7 @@ import { buildCrawlProcessor } from '../../../packages/jobs/src/worker.ts';
 import { migrateApplication } from '../../api/src/storage.ts';
 
 const pool = createDatabasePool();
-await migrateApplication(pool);
+if (process.env.WORKER_AUTO_MIGRATE === '1') await migrateApplication(pool);
 
 const fetchHtml = async (url: string) => {
   const { response, finalUrl } = await secureFetch(url);

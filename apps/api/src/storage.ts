@@ -1,12 +1,8 @@
-import { readFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
 import type { Pool } from 'pg';
-import { migrate } from '../../../packages/db/src/index.ts';
+import { runMigrations } from '../../../packages/db/src/migrations.ts';
 
 export async function migrateApplication(pool: Pool) {
-  await migrate(pool);
-  const path = fileURLToPath(new URL('../../../packages/db/migrations/002_auth.sql', import.meta.url));
-  await pool.query(await readFile(path, 'utf8'));
+  return runMigrations(pool);
 }
 
 export async function truncateApplication(pool: Pool) {

@@ -5,7 +5,7 @@ import { migrateApplication } from './storage.ts';
 
 const pool = createDatabasePool();
 const queue = createCrawlQueue();
-await migrateApplication(pool);
+if (process.env.API_AUTO_MIGRATE === '1') await migrateApplication(pool);
 
 const app = createApiServer({ pool, queue });
 const port = Number(process.env.PORT ?? 3000);
