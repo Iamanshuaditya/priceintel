@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { InMemoryMonitoringStore, TenantBoundaryError } from '../src/index.ts';
+import type { PriceObservation } from '../src/index.ts';
 
 test('tenant boundary rejects cross-workspace reads', () => {
   const store = new InMemoryMonitoringStore();
@@ -30,7 +31,7 @@ test('duplicate crawl/observation ingestion is idempotent', () => {
   store.createProduct('a', { id: 'p', workspaceId: 'a', sku: 'S', title: 'Product', currency: 'USD' });
   store.createListing('a', { id: 'l', workspaceId: 'a', productId: 'p', url: 'https://example.com/p', retailer: 'example.com', health: 'STALE', failureCount: 0 });
   const at = new Date('2026-08-20T00:00:00Z');
-  const observation = { id:'o1', workspaceId:'a', productId:'p', competitorListingId:'l', fetchedAt:at, verifiedAt:at, currency:'USD', price:100, stockStatus:'IN_STOCK', sourceMethod:'JSON_LD' as const, extractorVersion:'jsonld-v1', confidence:0.95, crawlRunId:'r1' };
+  const observation: PriceObservation = { id:'o1', workspaceId:'a', productId:'p', competitorListingId:'l', fetchedAt:at, verifiedAt:at, currency:'USD', price:100, stockStatus:'IN_STOCK', sourceMethod:'JSON_LD', extractorVersion:'jsonld-v1', confidence:0.95, crawlRunId:'r1' };
   assert.equal(store.recordSuccessfulObservation('a', observation).inserted, true);
   assert.equal(store.recordSuccessfulObservation('a', observation).inserted, false);
   assert.equal(store.getObservations('a','l').length, 1);
