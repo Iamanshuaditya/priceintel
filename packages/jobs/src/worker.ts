@@ -24,7 +24,8 @@ export function buildCrawlProcessor(pool: Pool, fetchHtml: HtmlFetcher, hooks: P
     } catch (error) {
       const code = (error as {code?:string}).code ?? 'CRAWL_FAILED';
       await recordCrawlFailure(pool, identity, new Date(), code, code === 'PARSE_FAILED' ? 'PARSE_FAILED' : 'DEGRADED');
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw Object.assign(new Error(`${code}: ${message}`, { cause:error }), { code });
     }
 
     const result = await persistObservationAndEffects(pool, observation);
