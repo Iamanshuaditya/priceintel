@@ -100,21 +100,22 @@ export async function extractWithAdapterSupplements(
       const elapsed = Date.now() - start;
       if (elapsed >= budget.maxTotalMs || bytesUsed >= budget.maxCumulativeBytes) break;
 
-      const request = {
-        ...rawRequest,
-        url: assertSupplementaryRequest(primary, rawRequest),
-        sameOrigin: rawRequest.sameOrigin ?? true,
-        maxBytes: Math.min(
-          rawRequest.maxBytes ?? budget.defaultMaxBytes,
-          budget.maxCumulativeBytes - bytesUsed,
-        ),
-        timeoutMs: Math.min(
-          rawRequest.timeoutMs ?? budget.defaultTimeoutMs,
-          Math.max(1, budget.maxTotalMs - elapsed),
-        ),
-      };
       requestsUsed += 1;
+      let request: SupplementaryRequest | undefined;
       try {
+        request = {
+          ...rawRequest,
+          url: assertSupplementaryRequest(primary, rawRequest),
+          sameOrigin: rawRequest.sameOrigin ?? true,
+          maxBytes: Math.min(
+            rawRequest.maxBytes ?? budget.defaultMaxBytes,
+            budget.maxCumulativeBytes - bytesUsed,
+          ),
+          timeoutMs: Math.min(
+            rawRequest.timeoutMs ?? budget.defaultTimeoutMs,
+            Math.max(1, budget.maxTotalMs - elapsed),
+          ),
+        };
         const fetched = await fetchSupplementary(request);
         if (fetched.bytesDownloaded > (request.maxBytes ?? budget.defaultMaxBytes)) {
           throw Object.assign(new Error('Supplementary response exceeded request byte budget'), { code:'SUPPLEMENTARY_TOO_LARGE' });
@@ -140,9 +141,9 @@ export async function extractWithAdapterSupplements(
         supplementaryAttempts.push({
           adapterId:adapter.id,
           adapterVersion:adapter.version,
-          requestId:request.id,
-          purpose:request.purpose,
-          url:request.url,
+          requestId:rawRequest.id,
+          purpose:rawRequest.purpose,
+          url:request?.url ?? rawRequest.url,
           bytesDownloaded:0,
           candidateCount:0,
           errorCode:errorCode(error),
