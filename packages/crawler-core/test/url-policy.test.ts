@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { assertPublicHttpUrl, isPrivateOrLocalIp, resolvePublicHttpUrl, secureFetch, UnsafeTargetError } from '../src/url-policy.ts';
+import { assertPublicHttpUrl, createPinnedLookup, isPrivateOrLocalIp, resolvePublicHttpUrl, secureFetch, UnsafeTargetError } from '../src/url-policy.ts';
 
 const publicResolver = async () => ['93.184.216.34'];
 
@@ -21,6 +21,26 @@ test('rejects public-looking hostname resolving private', async () => {
 test('resolved target carries the exact public IP set into the transport boundary', async () => {
   const target = await resolvePublicHttpUrl('https://example.com/product', async () => ['93.184.216.34','2606:2800:220:1:248:1893:25c8:1946']);
   assert.deepEqual(target.approvedAddresses, ['93.184.216.34','2606:2800:220:1:248:1893:25c8:1946']);
+});
+
+test('pinned lookup honors Node single-address and all-address callback contracts', async () => {
+  const lookup = createPinnedLookup('93.184.216.34');
+  await new Promise<void>((resolve, reject) => {
+    lookup('example.com', { all:false }, (error, result, family) => {
+      if (error) return reject(error);
+      assert.equal(result, '93.184.216.34');
+      assert.equal(family, 4);
+      resolve();
+    });
+  });
+  await new Promise<void>((resolve, reject) => {
+    lookup('example.com', { all:true }, (error, result) => {
+      if (error) return reject(error);
+      assert.ok(Array.isArray(result));
+      assert.deepEqual(result, [{ address:'93.184.216.34', family:4 }]);
+      resolve();
+    });
+  });
 });
 
 test('secureFetch pins each request to addresses from the validation lookup and does not re-resolve inside transport', async () => {
