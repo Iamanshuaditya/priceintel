@@ -2,7 +2,7 @@
 
 ## Current milestone
 
-**Shopify reliability v1 is accepted/frozen. Best Buy crawler engineering is frozen behind source approval. Source governance is now a version-controlled platform capability, and Walmart has completed its first source-acceptability decision without a new crawler experiment.**
+**Shopify reliability v1 is accepted/frozen. Best Buy crawler engineering is frozen behind source approval. Source governance is a version-controlled platform capability. Walmart and Target have now completed source-acceptability decisions without new crawler experiments.**
 
 The accepted Shopify claim remains deliberately scoped: on the frozen 20-URL / 5-store Shopify corpus with independently reviewed decision truth, `shopify@1.3.0` achieved 100% decision accuracy: 15/15 expected observations correctly priced, 4/4 variant ambiguities correctly abstained, and 1/1 unavailable page correctly classified, with zero false price observations and zero false abstentions.
 
@@ -14,10 +14,17 @@ The Shopify market-safety gate is complete: competitor listings carry an explici
 
 Best Buy has a different accepted result: parser capability exists, but the currently reviewed public sources are not operationally approved for PriceIntel's intended use. Production and live-canary access fail closed as `SOURCE_NOT_APPROVED`, including redirect and supplementary-fetch destinations.
 
-Walmart is now source-reviewed before any new technical experiment:
+Walmart is source-reviewed before any new technical experiment:
 
 - `WALMART_PUBLIC_WEB` -> `NOT_APPROVED` for PriceIntel automated collection under the reviewed public terms;
 - `WALMART_MARKETPLACE_API` -> `REVIEW_REQUIRED`, because the API is seller/solution-provider scoped and its use for PriceIntel must be validated through the actual onboarding/authorization/use case before it can become an approved source.
+
+Target is now source-reviewed before crawler work:
+
+- `TARGET_PUBLIC_WEB` -> `NOT_APPROVED` for PriceIntel automated commercial collection under the reviewed April 15, 2026 public terms;
+- `TARGET_PLUS_API` -> governance conclusion `REVIEW_REQUIRED`, but it is intentionally **not** a runtime hostname policy yet because the actual production API hostname/scopes have not been verified from the reviewed public material.
+
+Target also has a future price-identity requirement: an approved source must define stable location/store/channel/personalization context rather than treating `USD` alone as enough to identify the price being monitored.
 
 ## Accepted evidence
 
@@ -68,20 +75,21 @@ Commit `945e0b15e5787973cf983fba64487fd074f571d7` passed hardening run `32421412
 
 Commit `02cd370c8869216ee2d814ea40bb73a167abeb88` passed hardening run `32422743147`.
 
-The version-controlled registry in `packages/crawler-core/src/source-governance.ts` carries:
-
-- source ID;
-- hostname patterns;
-- status (`APPROVED | NOT_APPROVED | REVIEW_REQUIRED`);
-- permitted access methods (`PUBLIC_HTTP | RETAILER_API | LICENSED_PROVIDER | BROWSER`);
-- review basis;
-- `reviewedAt` / optional `reviewAfter`;
-- evidence reference;
-- operational reason.
+The version-controlled registry in `packages/crawler-core/src/source-governance.ts` carries source ID, verified hostname patterns, status, permitted access methods, review basis, review dates, evidence reference, and operational reason.
 
 Deterministic tests prove registry uniqueness/evidence metadata, preserve the accepted Best Buy redirect gates, and prove Walmart public-web access is denied before DNS/transport. Marketplace API evaluation is separately classified `SOURCE_REVIEW_REQUIRED` when evaluated as `RETAILER_API`.
 
-The Walmart source rationale is recorded in `docs/research/WALMART_SOURCE_DECISION.md`. No Walmart live fetch/browser/API experiment was added as part of this decision.
+### Target public-web source gate
+
+Commit `f9d29c747a269a433a8e0beb7f20a9b990e37c45` passed hardening run `32423634205`.
+
+`TARGET_PUBLIC_WEB` is a `NOT_APPROVED` runtime policy for `target.com` / subdomains. The deterministic transport regression requires Target authorization to reject before both resolver and transport invocation.
+
+The same registry test requires `sourcePolicyForId('TARGET_PLUS_API') === undefined` until the real production endpoint/scope is verified. The separate source decision records the Target Plus integration surface as `REVIEW_REQUIRED` without inventing a runtime hostname.
+
+Target source rationale and the future location/store/channel/personalization price-context requirement are recorded in `docs/research/TARGET_SOURCE_DECISION.md` and `docs/verification/TARGET_SOURCE_GATE.md`.
+
+No Target live fetch, browser experiment, adapter, or API probe was added.
 
 ## Historical operator milestone
 
@@ -113,6 +121,9 @@ The accepted browser path proves `$100 HEALTHY -> $90 PRICE_CHANGED -> malformed
 - Version-controlled source-governance registry implemented and tested.
 - Walmart public-web source classified `NOT_APPROVED` without another crawler experiment.
 - Walmart Marketplace API kept separate as `REVIEW_REQUIRED` rather than incorrectly treating seller-scoped API capability as blanket approval.
+- Target public web classified `NOT_APPROVED` without a live crawler experiment.
+- Target Plus seller/developer surface classified `REVIEW_REQUIRED` in governance evidence while runtime endpoint routing remains intentionally absent until verified.
+- Target future price identity explicitly requires stable location/store/channel/personalization context before reliability measurement can reopen.
 
 ## Reliability / governance lessons preserved
 
@@ -125,16 +136,18 @@ The accepted browser path proves `$100 HEALTHY -> $90 PRICE_CHANGED -> malformed
 - Source permission is enforced per network hop, not only on the original listing URL.
 - Source acceptability should precede adapter/corpus work for every new retailer.
 - Public web, retailer API, licensed provider, and browser are separate source methods and may have different approval states for the same retailer.
+- Runtime source matching must use verified endpoints; governance must not invent API hostnames from portal/documentation URLs.
+- Currency alone may be insufficient price identity for location-sensitive retailers such as Target.
 
-## Active next program — next retailer source decision
+## Active next program — Home Depot source decision
 
-Shopify and Best Buy crawler engineering remain frozen. Walmart public-web engineering is also frozen unless its source status changes.
+Shopify and Best Buy crawler engineering remain frozen. Walmart and Target public-web engineering are also frozen unless their source status changes.
 
 Next work should continue the source-first sequence rather than increasing scraping sophistication:
 
-1. validate whether Walmart Marketplace solution-provider/seller authorization can support a narrow PriceIntel seller-scoped feature; otherwise seek a licensed provider with appropriate rights;
-2. start **Target source acceptability review** before any Target crawler work;
-3. then perform the same source decision for Home Depot;
+1. validate Walmart Marketplace solution-provider/seller authorization only if the business wants a narrow seller-scoped Walmart feature; otherwise investigate licensed providers;
+2. verify Target Plus agreement/API endpoint/scopes only if a seller-partner feature is pursued; do not reverse-engineer Target.com;
+3. start **Home Depot source acceptability review** before any Home Depot crawler work;
 4. only build a new retailer adapter/corpus when its source is explicitly approved for the intended access method;
 5. select a future production-browser-fallback test retailer only where source permission is approved and rendering—not access permission—is the real technical obstacle.
 
@@ -145,6 +158,8 @@ Next work should continue the source-first sequence rather than increasing scrap
 - Production browser fallback remains disabled; browser interception cannot replace restrictive deployment egress.
 - Best Buy has no currently approved automated data source for PriceIntel.
 - Walmart public web is `NOT_APPROVED`; the Marketplace API remains `REVIEW_REQUIRED` pending seller/solution-provider authorization/use-case validation.
+- Target public web is `NOT_APPROVED`; Target Plus remains `REVIEW_REQUIRED` at the governance/research level with no verified runtime API endpoint policy yet.
+- Target requires a richer market/location/channel price identity before an approved source can safely generate comparable observations.
 - The source-governance registry currently preserves legacy behavior for **unregistered** generic sources to avoid unexpectedly disabling existing Shopify/generic listings. Formal retailer reliability programs must register a source decision before new live measurement. A future explicit migration may make registry membership mandatory for all production sources.
 - Registry policy is version-controlled code/docs rather than a normalized database service; this is intentional for the initial governance layer.
 - Evidence retention/redaction policy for large raw artifacts remains open.
