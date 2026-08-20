@@ -2,7 +2,7 @@
 
 ## Current milestone
 
-PostgreSQL + durable-worker correctness gate passed in GitHub Actions. Next node: API/auth/workspace boundary backed by the real persistence layer.
+Persistence/worker hardening gate passed in GitHub Actions, including out-of-order completion correctness, locked dependency installation, strict TypeScript typecheck, and a real build. Next node: `User` + `Membership` -> owner/member authorization -> API-backed product/listing/crawl vertical.
 
 ## Completed
 
@@ -20,50 +20,62 @@ PostgreSQL + durable-worker correctness gate passed in GitHub Actions. Next node
 - Redis/BullMQ crawl queue and worker boundary.
 - BullMQ custom job IDs derived from stable job keys; PostgreSQL remains the correctness authority on replay.
 - Transactional observation + change-event + notification-outbox creation.
-- Failure-honest crawl state: failed attempts do not advance last successful verification.
-- Real GitHub Actions Postgres + Redis service-container gate.
+- Failure-honest crawl state: failed attempts do not fabricate successful observations.
+- Materialized listing state is monotonic by verified observation time: a late older success is retained in history but cannot roll current price/stock/last-success backward or create a reverse alert.
+- Late older failures cannot overwrite health/freshness established by a newer crawl attempt.
+- Real GitHub Actions PostgreSQL + Redis service-container gate.
 - Adversarial child-process worker-death test: process exits after DB commit and before queue acknowledgement; stalled replay produces no duplicate observation/change/outbox entry.
+- Committed npm lockfile (`lockfileVersion: 3`) freezes the dependency graph used by CI.
+- CI installs with `npm ci`, runs in read-only repository-content mode, and caches npm artifacts.
+- Strict TypeScript compiler gate (`npm run typecheck`) and emitted build gate (`npm run build`) are active.
 
 ## Verified gates
 
-- Foundation suite: **17/17 PASS** in GitHub Actions.
-- SSRF/security suite: **6/6 PASS** in GitHub Actions.
-- Deterministic vertical suite: **1/1 PASS** in GitHub Actions.
-- PostgreSQL/BullMQ integration suite: **4/4 PASS** in GitHub Actions.
-- Observable commit status: `priceintel/persistence-worker = success` for commit `4b120f6b4696cd5d7801f45d581cca066b8c823d`.
+GitHub Actions run `32331047267` on commit `bf5da5ced8672e71561a80d0aa857fd07137aafa` published `priceintel/hardening = success`.
+
+- TypeScript strict typecheck: **PASS**.
+- Foundation suite: **17/17 PASS**.
+- SSRF/security suite: **6/6 PASS**.
+- Deterministic vertical suite: **1/1 PASS**.
+- PostgreSQL/BullMQ integration suite: **6/6 PASS**.
+- TypeScript build: **PASS**.
+
+The integration gate now includes explicit regressions for out-of-order successful completion and for an older failure arriving after a newer successful crawl.
 
 ## In progress
 
 - Complete OSS/license review of all required references.
-- Replace bootstrap repository helpers with the API/auth/workspace application boundary.
-- Plan first production crawler adapter/browser-worker integration behind the durable worker.
+- Add real user/membership persistence and the API authorization boundary.
+- Plan first production retailer/browser worker integration behind the durable worker.
 
 ## Blocked
 
-None for the current persistence/worker gate.
+None for the current persistence-hardening gate.
 
 ## Failed verification history
 
-The first GitHub persistence run failed because BullMQ 6.1.1 requires an installed Redis client when using connection-options mode. No test was weakened. `ioredis@5.10.1` was added and the unchanged full gate passed on the next commit.
+1. Initial persistence run `32329535448` failed because BullMQ 6.1.1 needed its Redis client dependency. `ioredis@5.10.1` was added; the unchanged worker-replay test then passed.
+2. First TypeScript hardening run `32330894297` generated the lockfile successfully but failed strict typecheck because an existing test fixture widened `stockStatus` to plain `string`. The fixture was typed as `PriceObservation`; strictness was not reduced. The next full run passed.
 
 ## Next actions
 
-1. Add `User` + `Membership` persistence and owner/member authorization rules.
-2. Add API boundary for workspace/product/listing CRUD and crawl enqueue.
-3. Add API integration tests proving tenant isolation is enforced server-side.
-4. Move the fixture-backed end-to-end path through API -> Postgres -> BullMQ -> worker -> observation query.
-5. Add first operator UI showing current value, freshness, and monitoring health.
-6. Add retailer adapter contract and browser fallback only after the API-backed vertical path is green.
-7. Add actual notification delivery worker; the current outbox proves deduplicated notification intent, not external delivery.
+1. Add `users` + `memberships` persistence with `OWNER` / `MEMBER` roles.
+2. Implement authenticated workspace authorization at the server/API boundary.
+3. Add workspace/product/listing CRUD and crawl-enqueue API endpoints.
+4. Add API integration tests proving User A cannot access Workspace B even with guessed entity IDs.
+5. Move the fixture-backed path through API -> PostgreSQL -> BullMQ -> worker -> observation/history API query.
+6. Verify `$100 -> $90 -> malformed page` through that real API path, preserving `$90` as current while health becomes `PARSE_FAILED`.
+7. Only after that gate is green, add the first small operator UI: login, workspace, products, listings, current price, freshness, health, trigger crawl, basic history.
+8. Add actual notification delivery worker later; the current outbox proves deduplicated notification intent, not external delivery.
 
 ## Known risks
 
-- Node native type stripping remains a bootstrap execution mechanism, not the final compiler/build strategy.
-- No committed npm lockfile yet; direct dependencies are pinned but transitive resolution is not frozen.
+- Tests still use Node's TypeScript stripping for direct test execution, but the repository now has independent strict `tsc` typecheck and emitted-build gates.
 - The pinned HTTP transport buffers response bodies with a configured cap; streaming/parsing policy needs review before large-scale crawling.
 - Browser fallback and retailer-specific transport/session policies are not implemented yet.
 - International price parsing is intentionally deferred; ambiguous formats are rejected.
 - Notification outbox delivery, retry, signing, and provider failure behavior are not implemented yet.
+- Equal `verified_at` observations currently use ID ordering as a deterministic tie-breaker; future source/event identity may justify a stronger sequence key.
 
 ## Deferred intentionally
 
