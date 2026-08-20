@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { performance } from 'node:perf_hooks';
 import { extractWithAdapterSupplements, extractWithAdapters, selectAdapterCandidate } from '../packages/crawler-core/src/adapters/registry.ts';
 import type { FetchArtifact, SupplementaryRequest } from '../packages/crawler-core/src/adapters/types.ts';
-import { chooseFallbackDecision, evaluateTruth, truthSummary, type FallbackDecision, type TruthState } from '../packages/crawler-core/src/reliability.ts';
+import { chooseFallbackDecision, evaluateTruth, isLikelyChallengePage, truthSummary, type FallbackDecision, type TruthState } from '../packages/crawler-core/src/reliability.ts';
 import { secureFetch } from '../packages/crawler-core/src/url-policy.ts';
 
 interface CorpusEntry {
@@ -66,12 +66,6 @@ function errorCode(error: unknown) {
   return (error as {code?:string}).code ?? (error instanceof Error ? error.name : 'UNKNOWN_ERROR');
 }
 
-function isChallenge(status: number | undefined, html: string, finalUrl?: string) {
-  if (status && [401, 403, 407, 429].includes(status)) return true;
-  if (finalUrl && /\/blocked(?:[/?#]|$)/i.test(new URL(finalUrl).pathname)) return true;
-  return /verify you are human|captcha|access denied|robot or human|automated access|unusual traffic/i.test(html.slice(0, 250_000));
-}
-
 function percentile(values: number[], p: number) {
   if (!values.length) return null;
   const sorted = [...values].sort((a,b) => a-b);
@@ -111,7 +105,7 @@ async function runOne(entry: CorpusEntry, truth: TruthFile, maxTruthAgeHours: nu
     fetchDurationMs = Math.round(performance.now() - fetchStart);
     html = artifact.html;
     finalUrl = artifact.finalUrl;
-    const challenge = isChallenge(artifact.status, artifact.html, artifact.finalUrl);
+    const challenge = isLikelyChallengePage({ status:artifact.status, html:artifact.html, finalUrl:artifact.finalUrl });
 
     const extractionStart = performance.now();
     const primary = extractWithAdapters(artifact);
@@ -190,13 +184,14 @@ async function runOne(entry: CorpusEntry, truth: TruthFile, maxTruthAgeHours: nu
   } catch (error) {
     const manual = truth[entry.id];
     const evaluation = evaluateTruth(manual, {}, Date.now(), maxTruthAgeHours);
+    const challenge = isLikelyChallengePage({ html, finalUrl });
     return {
       id:entry.id,
       retailer:entry.retailer,
       url:entry.url,
       finalUrl,
       fetchMethod:'HTTP_PINNED',
-      challenge:isChallenge(undefined, html, finalUrl),
+      challenge,
       bytesDownloaded:html ? Buffer.byteLength(html) : 0,
       expectedAdapter:entry.expectedAdapter,
       expectedAdapterMatched:undefined,
@@ -204,7 +199,7 @@ async function runOne(entry: CorpusEntry, truth: TruthFile, maxTruthAgeHours: nu
       supplementaryRequestCount:0,
       supplementaryBytes:0,
       selectedFromSupplementary:false,
-      fallbackDecision:chooseFallbackDecision({extracted:false, challenge:isChallenge(undefined, html, finalUrl), preferred:entry.preferredFallback}),
+      fallbackDecision:chooseFallbackDecision({extracted:false, challenge, preferred:entry.preferredFallback}),
       retryCount:0,
       fetchDurationMs:fetchDurationMs || Math.round(performance.now() - totalStart),
       extractionDurationMs:0,
