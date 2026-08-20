@@ -10,6 +10,36 @@ function shopifyCurrency(html: string) {
   return active?.toUpperCase();
 }
 
+function numberInSubunits(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 0) return value;
+  if (typeof value === 'string' && /^\d+$/.test(value)) return Number(value);
+  return undefined;
+}
+
+function variantPriceAnalysis(variants: Record<string, unknown>[]) {
+  if (!variants.length) return {
+    relevant:[] as Record<string, unknown>[],
+    prices:[] as number[],
+    filteredUnavailable:false,
+  };
+
+  const availabilityComplete = variants.every((variant) => typeof variant.available === 'boolean');
+  const availableVariants = availabilityComplete
+    ? variants.filter((variant) => variant.available === true)
+    : [];
+  const filteredUnavailable = availabilityComplete
+    && availableVariants.length > 0
+    && availableVariants.length < variants.length;
+  const relevant = filteredUnavailable ? availableVariants : variants;
+  const prices = relevant.map((variant) => numberInSubunits(variant.price));
+  if (prices.some((price) => price === undefined)) return undefined;
+  return {
+    relevant,
+    prices:prices as number[],
+    filteredUnavailable,
+  };
+}
+
 function productJsonCandidates(html: string, adapter: RetailerAdapter): AdapterCandidate[] {
   const currency = shopifyCurrency(html);
   if (!currency) return [];
@@ -25,20 +55,20 @@ function productJsonCandidates(html: string, adapter: RetailerAdapter): AdapterC
     const variants = Array.isArray(product.variants)
       ? product.variants.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object' && !Array.isArray(item)))
       : [];
-    const prices = variants
-      .map((variant) => typeof variant.price === 'number' ? variant.price : Number.NaN)
-      .filter(Number.isFinite);
-    const uniquePrices = new Set(prices);
-    const priceVaries = product.price_varies === true || uniquePrices.size > 1;
-    if (priceVaries) continue;
-    const cents = typeof product.price === 'number'
-      ? product.price
-      : (uniquePrices.size === 1 ? [...uniquePrices][0] : undefined);
-    if (typeof cents !== 'number' || !Number.isFinite(cents) || cents < 0) continue;
+    const analysis = variantPriceAnalysis(variants);
+    if (!analysis) continue;
+    const uniquePrices = new Set(analysis.prices);
+    if (uniquePrices.size > 1) continue;
+    const cents = uniquePrices.size === 1
+      ? [...uniquePrices][0]
+      : numberInSubunits(product.price);
+    if (cents === undefined) continue;
     const sellerName = typeof product.vendor === 'string' && product.vendor.trim() ? product.vendor.trim() : undefined;
-    const available = typeof product.available === 'boolean'
-      ? product.available
-      : (variants.length ? variants.some((variant) => variant.available === true) : undefined);
+    const available = analysis.filteredUnavailable
+      ? true
+      : (typeof product.available === 'boolean'
+          ? product.available
+          : (variants.length ? variants.some((variant) => variant.available === true) : undefined));
     candidates.push({
       price: cents / 100,
       currency,
@@ -49,7 +79,7 @@ function productJsonCandidates(html: string, adapter: RetailerAdapter): AdapterC
       provenance: {
         adapterId: adapter.id,
         adapterVersion: adapter.version,
-        sourcePath: 'script[type="application/json"]#ProductJson|[data-product-json]',
+        sourcePath: `script[type="application/json"]#ProductJson|[data-product-json]${analysis.filteredUnavailable ? '#available-variants' : ''}`,
       },
     });
   }
@@ -77,12 +107,6 @@ function ajaxUrls(primaryUrl: string) {
   return { product:product.toString(), cart:cart.toString() };
 }
 
-function numberInSubunits(value: unknown) {
-  if (typeof value === 'number' && Number.isFinite(value) && value >= 0) return value;
-  if (typeof value === 'string' && /^\d+$/.test(value)) return Number(value);
-  return undefined;
-}
-
 function currencyFromSupplements(primary: {html:string}, artifacts: SupplementaryArtifact[]) {
   const primaryCurrency = shopifyCurrency(primary.html);
   if (primaryCurrency) return primaryCurrency;
@@ -106,12 +130,12 @@ function ajaxProductCandidate(primaryUrl: string, product: Record<string, unknow
     if (!chosen) return [];
     sourcePath += `#variant=${requestedVariant}`;
   } else {
-    const priced = variants
-      .map((variant) => ({ variant, price:numberInSubunits(variant.price) }))
-      .filter((item): item is {variant:Record<string, unknown>;price:number} => item.price !== undefined);
-    const unique = new Set(priced.map((item) => item.price));
-    if (product.price_varies === true || unique.size > 1) return [];
-    if (priced.length) chosen = priced[0].variant;
+    const analysis = variantPriceAnalysis(variants);
+    if (!analysis) return [];
+    const unique = new Set(analysis.prices);
+    if (unique.size > 1) return [];
+    if (analysis.relevant.length) chosen = analysis.relevant[0];
+    if (analysis.filteredUnavailable) sourcePath += '#available-variants';
   }
 
   const cents = chosen ? numberInSubunits(chosen.price) : numberInSubunits(product.price);
@@ -146,7 +170,7 @@ function needsSupplementaryEvidence(primaryCandidates: AdapterCandidate[]) {
 
 export const shopifyAdapter: RetailerAdapter = {
   id: 'shopify',
-  version: '1.2.0',
+  version: '1.3.0',
   priority: 60,
   canHandle(artifact) {
     const host = hostnameOf(artifact.finalUrl);
