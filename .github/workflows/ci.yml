@@ -7,9 +7,8 @@ on:
       - main
       - "work/**"
 
-# Temporary write permission is only for the one-time Playwright lockfile refresh.
 permissions:
-  contents: write
+  contents: read
   statuses: write
 
 jobs:
@@ -47,19 +46,6 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Refresh lockfile for pinned Playwright dependency
-        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
-      - name: Commit refreshed lockfile once
-        if: github.event_name == 'push'
-        run: |
-          if git diff --quiet -- package-lock.json; then
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -- package-lock.json
-          git commit -m "chore: lock Playwright dependency"
-          git push origin "HEAD:${GITHUB_REF_NAME}"
       - name: Install locked dependencies
         run: npm ci --no-audit --no-fund
       - name: Run full hardening gate
