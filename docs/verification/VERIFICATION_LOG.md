@@ -2,151 +2,155 @@
 
 ## 2026-08-20 — Foundation + security hardening
 
-Local and GitHub verification established:
+- Foundation suite: **17/17 PASS**.
+- SSRF/security suite: **6/6 PASS**.
+- Deterministic vertical suite: **1/1 PASS**.
+- DNS validation was bound to socket connection through approved-IP pinning + peer verification.
+- Missing availability became tri-state stock rather than inferred in-stock.
+- Ambiguous comma-decimal formats are rejected by the US-first parser.
+- Work-branch CI trigger added.
 
-- foundation suite: **17/17 PASS**;
-- SSRF/security suite: **6/6 PASS**;
-- deterministic vertical suite: **1/1 PASS**.
+Commit `a3924885758668b113c60347b07382f62cf3240a` published `priceintel/foundation = success`.
 
-Independent-audit defects fixed before the persistence phase:
+## 2026-08-20 — PostgreSQL + durable worker
 
-1. DNS validation was not bound to the actual socket -> approved-IP pinning + peer verification added;
-2. missing availability became `in stock` -> tri-state stock model added;
-3. CI did not run on `work/**` -> branch trigger added;
-4. ambiguous comma-decimal values could be misread -> US-first parser now rejects them.
+Initial persistence run `32329535448` failed because BullMQ 6.1.1 required its Redis client dependency. Exact `ioredis@5.10.1` was added; no assertion was weakened.
 
-GitHub commit `a3924885758668b113c60347b07382f62cf3240a` published `priceintel/foundation = success`.
+Run `32329656498` on commit `4b120f6b4696cd5d7801f45d581cca066b8c823d` passed real PostgreSQL + Redis integration, including child-process death after DB COMMIT and before BullMQ ACK with no duplicate observation/change/outbox on stalled replay.
 
-## 2026-08-20 — PostgreSQL + durable worker loop
+## 2026-08-20 — Ordering + reproducible build
 
-### Implementation
+Audit findings addressed:
+
+- out-of-order crawl completion could roll current state backward;
+- no committed npm lockfile;
+- runtime tests did not prove strict TypeScript/build health.
+
+The persistence layer was changed so only the chronological verified head may advance current state or derive forward changes. Late old failures likewise cannot overwrite newer attempt health.
+
+Run `32330894297` initially failed strict typecheck because an existing test fixture widened `stockStatus` to `string`. The fixture was typed rather than reducing compiler strictness.
+
+Run `32331047267` on `bf5da5ced8672e71561a80d0aa857fd07137aafa` passed strict typecheck, deterministic/security suites, six integration cases, and emitted build under `npm ci`.
+
+## 2026-08-20 — AuthZ + API-backed product vertical
+
+Implemented persisted users/memberships (`OWNER | MEMBER`), salted scrypt passwords, opaque sessions whose raw tokens are never stored, workspace authorization, product/listing CRUD, crawl enqueue, listing/current/history queries, and production worker startup through the hardened HTTP transport.
+
+The API integration path exercises:
+
+`register/login -> workspace -> product -> listing -> BullMQ -> worker -> $100 -> $90 -> PRICE_CHANGED -> malformed crawl -> PARSE_FAILED -> last verified $90 preserved`.
+
+Two failures were preserved rather than hidden:
+
+1. Node strip-only runtime rejected TypeScript parameter-property syntax in `HttpError`; source was rewritten without weakening tests.
+2. BullMQ `failedReason` preserved the Error message but not arbitrary `.code`; the worker boundary now serializes stable failure code into the queue-visible message while Postgres separately records `failure_code`.
+
+The resulting `b9d155981467d97fc7586f4ec91ab56f5fa50db7` hardening run was green.
+
+## 2026-08-20 — Migration ledger + browser session boundary
+
+### Migration discipline
+
+Commit `025f2c822a07db51f5891c6bdb3fd322c8ecbcac` added:
+
+- `schema_migrations` ledger;
+- ordered migration discovery;
+- SHA-256 checksum verification;
+- PostgreSQL advisory locking;
+- transactional pending migration application;
+- regression proving concurrent runner idempotency and checksum-mismatch refusal;
+- opt-in API/worker auto-migration instead of unconditional production startup mutation.
+
+Its hardening gate passed against PostgreSQL 17.
+
+### Browser auth/API boundary
 
 Added:
 
-- PostgreSQL migration/schema;
-- durable crawl-run identity;
-- DB-enforced observation/change/outbox idempotency;
-- listing-row serialization for change derivation;
-- BullMQ queue + worker boundary;
-- real Postgres/Redis GitHub Actions services;
-- worker-death replay integration test.
+- HttpOnly `priceintel_session` cookie transport for browsers;
+- `SameSite=Lax` and production `Secure` behavior;
+- no raw token in browser auth JSON;
+- Bearer compatibility for API/CLI;
+- same-origin CSRF check for cookie-authenticated unsafe requests;
+- persisted logout revocation;
+- login/register rate limiting before unbounded scrypt work;
+- listing collection/filter route;
+- DB-backed crawl status route and durable `QUEUED` crawl creation before BullMQ enqueue;
+- minimal operator console.
 
-### First GitHub run
+First run `32333430612` failed strict TypeScript inference for the optional `Retry-After` response header. The source typing was fixed; behavioral assertions were unchanged.
 
-Commit: `69b8e31c7cf24b4e35455e7f95a7cc9dc5405c4e`
+Run `32333615080` on `898a38e8b182b5b87846b215d025e86faa672653` passed the full backend hardening gate including the new cookie/CSRF/rate-limit integration test.
 
-GitHub Actions run: `32329535448`
+## 2026-08-20 — Real Chromium operator E2E
 
-Result: **FAIL**.
+Pinned/locked `@playwright/test` and added a real browser acceptance path plus CI screenshot artifacts.
 
-Evidence before failure:
+The test drives Chromium through:
 
-- foundation 17/17 PASS;
-- security 6/6 PASS;
-- vertical 1/1 PASS;
-- PostgreSQL concurrent-idempotency PASS;
-- cross-workspace FK rejection PASS;
-- job-key identity-collision rejection PASS.
+1. create account through cookie session;
+2. create workspace;
+3. create product;
+4. add deterministic fixture listing;
+5. Check Now -> `$100`, `IN_STOCK`, `HEALTHY`;
+6. fixture `$100 -> $90` -> Check Now -> `$90`, two observations, one `PRICE_CHANGED` event `$100 -> $90`;
+7. malformed fixture -> Check Now -> `PARSE_FAILED`, last verified `$90` and prior successful timestamp preserved;
+8. DB assertion remains exactly two observations and one price change;
+9. browser assertion confirms the session cookie is not readable through `document.cookie` and no token exists in `localStorage`.
 
-Failure: BullMQ 6.1.1 refused connection-options mode because its optional `ioredis` client was not installed.
+### First Playwright run — intentional failure retained
 
-Fix: add exact `ioredis@5.10.1`. No test/assertion was removed or weakened.
+Commit `07c96fdb61ec0b14489b8e8bd430fd083b8f3cfb`.
 
-### Re-run after fix
+Run `32334014925`: **FAIL**.
 
-Commit: `4b120f6b4696cd5d7801f45d581cca066b8c823d`
+The browser exposed a real UI race/visibility bug. Elements carrying `hidden` also had layout CSS (`display:grid`), so the product form was interactive before workspace initialization finished. Chromium submitted to:
 
-GitHub Actions run: `32329656498`
+`POST /v1/workspaces/null/products -> 403`
 
-Observable status: `priceintel/persistence-worker = success`.
+The Playwright assertion was not relaxed. UI CSS was fixed with an explicit `[hidden]{display:none!important}` rule.
 
-Results:
+### Final browser acceptance
 
-- foundation: **17/17 PASS**;
-- SSRF/security: **6/6 PASS**;
-- deterministic vertical: **1/1 PASS**;
-- persistence/worker integration: **4/4 PASS**.
+Commit `c8fda2a1fa78da552169848c9bde3a88c7d2f3e3`.
 
-The integration suite proved concurrent replay idempotency, tenant FK isolation, crawl job identity immutability, and worker-death replay without duplicate observation/change/outbox effects.
-
-## 2026-08-20 — Persistence ordering + reproducible build hardening
-
-### Audit findings addressed
-
-1. Out-of-order crawl completion could previously make materialized current state move backward and create a misleading reverse change.
-2. Dependency resolution was not frozen because `package-lock.json` was absent.
-3. Runtime tests did not independently prove the whole TypeScript project typechecked or emitted successfully.
-
-### Implementation
-
-- observation history remains append-oriented;
-- listing ingestion still serializes through a row lock;
-- after insertion, only the chronological newest verified observation may advance current price/stock/last-successful state;
-- late historical observations create no reverse change/outbox events;
-- later observations derive changes from their chronological predecessor;
-- older crawl failures cannot overwrite health/freshness from a newer attempt;
-- added `tsconfig.json` with strict typechecking;
-- added `tsconfig.build.json` and emitted-build gate;
-- added pinned TypeScript/Node/Postgres type dependencies;
-- generated and committed `package-lock.json` (`lockfileVersion: 3`);
-- CI switched permanently to read-only repository contents + `npm ci` + npm cache.
-
-### First hardening run
-
-Commit: `a76331d148dcd07086be5e61f6d1c6a12d0bcca7`
-
-GitHub Actions run: `32330894297`
-
-Result: **FAIL**.
-
-The run successfully installed dependencies and generated the lockfile, which was committed by GitHub Actions as:
-
-`fdf43850c50a79380cea3452069fd5a8d6574d9a` — `chore: lock dependency graph`.
-
-The new strict compiler gate then found an existing test fixture whose `stockStatus` literal had widened to plain `string`. Runtime tests had not exposed this.
-
-Fix: explicitly type the fixture as `PriceObservation`. Compiler strictness was not reduced and no test was weakened.
-
-### Final hardening run
-
-Commit: `bf5da5ced8672e71561a80d0aa857fd07137aafa`
-
-GitHub Actions run: `32331047267`
+GitHub Actions run `32334339220`: **PASS**.
 
 Observable status: `priceintel/hardening = success`.
 
-The job used real PostgreSQL 17 and Redis 7 service containers and installed the committed graph with:
+The job independently passed:
 
-```bash
-npm ci --no-audit --no-fund
-```
+- locked `npm ci` install;
+- strict TypeScript typecheck;
+- foundation/security/vertical tests;
+- PostgreSQL/Redis/BullMQ integration suite (**10/10**);
+- emitted build + compiled migration execution;
+- Chromium installation;
+- Playwright operator E2E;
+- browser evidence artifact upload.
 
-Results, in executed order:
+Evidence artifact:
 
-- `npm run typecheck` -> **PASS**;
-- foundation suite -> **17/17 PASS**;
-- SSRF/security suite -> **6/6 PASS**;
-- deterministic vertical suite -> **1/1 PASS**;
-- PostgreSQL/BullMQ integration suite -> **6/6 PASS**;
-- `npm run build` -> **PASS**.
+- ID: `9394100566`;
+- SHA-256: `f60680cc5f84209092a58ea4a215e2b92f7ea8b8c14d7342615c2c95861bad78`;
+- screenshots: `01-healthy-100.png`, `02-price-change-90.png`, `03-parse-failed-preserves-90.png`.
 
-The six integration cases now prove:
+The screenshots were independently visually inspected after CI. They clearly show the healthy `$100` state, the `$90` price-change/history state, and the `PARSE_FAILED` state with `$90` retained as the last verified value plus the explicit warning that it is not being treated as fresh.
 
-1. PostgreSQL remains the authority under concurrent replay of the same crawl observation;
-2. a newer `$90` observation committed before a slow older `$100` observation remains the materialized current state while both are retained chronologically;
-3. a late older failure cannot overwrite a newer successful listing health/freshness state;
-4. composite workspace foreign keys reject cross-tenant listing/product wiring;
-5. a stable job key cannot be rebound to another crawl identity;
-6. a child worker can die after DB COMMIT and before BullMQ ACK, then a replacement worker can replay without duplicate observation/change/outbox effects.
+## Next verification program — Retailer Reliability
 
-The out-of-order test additionally inserts a later `$80` observation and verifies its `PRICE_CHANGED` predecessor is the chronological `$90` observation, not the late-inserted older `$100` row.
+The next acceptance gate is not “more CRUD.” It must measure real extraction reliability.
 
-### Remaining verification gaps
+Required gates:
 
-- real user/membership/API authorization and tenant-isolation path;
-- full API-backed fixture -> queue -> worker -> query vertical;
-- recurring scheduler behavior;
-- Redis unavailable / database unavailable failure injection;
-- notification delivery retry/dedupe beyond outbox intent;
-- browser-worker crash and SSRF isolation;
-- production deployment/bootstrap beyond the current compiler/CI build gate.
+- adapter interface + adapter/version provenance;
+- generic structured extractor behind the interface;
+- deterministic adapter contracts;
+- Shopify plus at least two major US retailer adapters;
+- evidence/extraction trace model;
+- controlled live URL corpus;
+- live-canary command and automatically generated retailer health report;
+- explicit distinction between transport success, extraction success, and manually sampled correctness;
+- browser fallback architecture;
+- browser-specific private/local network blocking before production browser navigation;
+- deterministic CI remains blocking; live Internet canaries run manually/scheduled and do not make ordinary PR CI nondeterministic.

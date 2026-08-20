@@ -2,85 +2,84 @@
 
 ## Current milestone
 
-Persistence/worker hardening gate passed in GitHub Actions, including out-of-order completion correctness, locked dependency installation, strict TypeScript typecheck, and a real build. Next node: `User` + `Membership` -> owner/member authorization -> API-backed product/listing/crawl vertical.
+The first browser-backed operator vertical is accepted. PriceIntel now has durable PostgreSQL/BullMQ processing, migration discipline, authenticated tenant-scoped API access, an HttpOnly browser session boundary, a deliberately small operator UI, and a real Playwright browser E2E that proves healthy, price-change, and failure-honesty states.
+
+GitHub Actions run `32334339220` on commit `c8fda2a1fa78da552169848c9bde3a88c7d2f3e3` published `priceintel/hardening = success` and uploaded browser evidence artifact `9394100566` (`sha256:f60680cc5f84209092a58ea4a215e2b92f7ea8b8c14d7342615c2c95861bad78`).
+
+The product question now changes from “can the application behave correctly?” to “can the crawler produce measurably correct ecommerce observations on the real Internet?”
 
 ## Completed
 
-- Repository initialized and product direction encoded in docs.
-- Loop state and verification log established.
-- Deterministic fixture commerce server.
+- Repository/product thesis and loop-engineering documentation.
+- Deterministic commerce fixture server.
 - DNS-pinned HTTP(S) transport with per-hop SSRF validation and connected-peer verification.
 - Generic JSON-LD Product/Offer extraction.
 - Tri-state stock semantics: `IN_STOCK`, `OUT_OF_STOCK`, `UNKNOWN`.
-- US-first price parser rejects ambiguous non-US comma-decimal values instead of misreading them.
-- PostgreSQL schema for workspace-scoped products, listings, crawl runs, append-only observations, change events, and notification outbox.
-- Database-level crawl idempotency through `UNIQUE(crawl_run_id)` and stable `UNIQUE(job_key)` identity.
-- Composite workspace foreign keys prevent cross-tenant product/listing/observation wiring.
-- Listing-row locking serializes observation/change derivation for a listing.
-- Redis/BullMQ crawl queue and worker boundary.
-- BullMQ custom job IDs derived from stable job keys; PostgreSQL remains the correctness authority on replay.
-- Transactional observation + change-event + notification-outbox creation.
-- Failure-honest crawl state: failed attempts do not fabricate successful observations.
-- Materialized listing state is monotonic by verified observation time: a late older success is retained in history but cannot roll current price/stock/last-success backward or create a reverse alert.
-- Late older failures cannot overwrite health/freshness established by a newer crawl attempt.
-- Real GitHub Actions PostgreSQL + Redis service-container gate.
-- Adversarial child-process worker-death test: process exits after DB commit and before queue acknowledgement; stalled replay produces no duplicate observation/change/outbox entry.
-- Committed npm lockfile (`lockfileVersion: 3`) freezes the dependency graph used by CI.
-- CI installs with `npm ci`, runs in read-only repository-content mode, and caches npm artifacts.
-- Strict TypeScript compiler gate (`npm run typecheck`) and emitted build gate (`npm run build`) are active.
+- US-first parser rejects ambiguous comma-decimal prices instead of misreading them.
+- PostgreSQL authority for workspaces, products, listings, crawl runs, observations, changes, notification intent, auth sessions, and materialized current state.
+- DB-enforced replay/idempotency and composite tenant foreign keys.
+- Listing-row serialization and monotonic current-state semantics under out-of-order completion.
+- BullMQ at-least-once worker with adversarial process-death replay test.
+- Immutable ordered migration ledger with SHA-256 checksums and PostgreSQL advisory locking.
+- `API_AUTO_MIGRATE` / `WORKER_AUTO_MIGRATE` are opt-in development conveniences; explicit migration execution is the deployment model.
+- `users`, `memberships`, `OWNER` / `MEMBER` authorization, opaque sessions, scrypt password hashing, and session expiration.
+- Browser session transport through `priceintel_session` HttpOnly cookie while Bearer auth remains available for API/CLI callers.
+- Same-origin CSRF enforcement for cookie-authenticated writes.
+- Logout revokes the persisted session.
+- Login/register rate limiting before unbounded password-hash work.
+- Workspace/product/listing APIs plus DB-backed crawl status (`QUEUED | RUNNING | SUCCEEDED | FAILED`).
+- Minimal operator UI: login/account creation, workspace, products, listings, current verified price, stock, freshness, health, source/confidence, Check Now, history, and changes.
+- Failure-honest operator state explicitly labels a failed verification while preserving the last successfully verified value.
+- Real Chromium Playwright E2E with CI screenshot evidence.
+- Locked dependencies (`package-lock.json`), `npm ci`, strict TypeScript typecheck, emitted build, and compiled migration execution in CI.
 
-## Verified gates
+## Browser acceptance evidence
 
-GitHub Actions run `32331047267` on commit `bf5da5ced8672e71561a80d0aa857fd07137aafa` published `priceintel/hardening = success`.
+Successful browser run `32334339220` captured:
 
-- TypeScript strict typecheck: **PASS**.
-- Foundation suite: **17/17 PASS**.
-- SSRF/security suite: **6/6 PASS**.
-- Deterministic vertical suite: **1/1 PASS**.
-- PostgreSQL/BullMQ integration suite: **6/6 PASS**.
-- TypeScript build: **PASS**.
+1. `01-healthy-100.png` — `$100`, `IN_STOCK`, `HEALTHY`.
+2. `02-price-change-90.png` — current `$90`, two historical observations, semantic `$100 -> $90` change.
+3. `03-parse-failed-preserves-90.png` — `PARSE_FAILED`, newer attempt timestamp, older successful-verification timestamp, failure count `1`, and last verified `$90` preserved without being represented as fresh.
 
-The integration gate now includes explicit regressions for out-of-order successful completion and for an older failure arriving after a newer successful crawl.
+The artifact was independently visually reviewed after CI and accepted.
 
-## In progress
+## Failed verification history worth preserving
 
-- Complete OSS/license review of all required references.
-- Add real user/membership persistence and the API authorization boundary.
-- Plan first production retailer/browser worker integration behind the durable worker.
+1. `32329535448`: BullMQ required the Redis client dependency; exact `ioredis` dependency added, unchanged replay test passed.
+2. `32330894297`: strict TypeScript caught a widened test literal; fixture typing fixed without lowering strictness.
+3. `32333430612`: browser/API work first failed strict typing of the retry header; source fixed, assertions unchanged.
+4. `32334014925`: first real Playwright run exposed a UI hidden-state bug. CSS `display:grid` made `[hidden]` workspace content interactive before workspace initialization, causing `POST /v1/workspaces/null/products`. The UI was fixed with an explicit `[hidden]{display:none!important}` rule; the unchanged browser E2E then passed in `32334339220`.
 
-## Blocked
+## In progress — Retailer Reliability
 
-None for the current persistence-hardening gate.
+Next major program:
 
-## Failed verification history
+1. extraction/retailer adapter contract with explicit adapter/version provenance;
+2. move generic structured extraction behind that contract;
+3. evidence metadata and extraction traces;
+4. deterministic Shopify + major-retailer adapter fixtures/contracts;
+5. controlled real-URL corpus and a non-blocking live-canary command;
+6. reliability metrics/reporting, including manual correctness sampling;
+7. browser fallback only when lightweight extraction lacks enough confidence;
+8. browser-specific SSRF/network policy before any production `page.goto(userUrl)` path;
+9. scheduled live-canary workflow separated from blocking deterministic CI.
 
-1. Initial persistence run `32329535448` failed because BullMQ 6.1.1 needed its Redis client dependency. `ioredis@5.10.1` was added; the unchanged worker-replay test then passed.
-2. First TypeScript hardening run `32330894297` generated the lockfile successfully but failed strict typecheck because an existing test fixture widened `stockStatus` to plain `string`. The fixture was typed as `PriceObservation`; strictness was not reduced. The next full run passed.
+## Known risks / intentionally open
 
-## Next actions
-
-1. Add `users` + `memberships` persistence with `OWNER` / `MEMBER` roles.
-2. Implement authenticated workspace authorization at the server/API boundary.
-3. Add workspace/product/listing CRUD and crawl-enqueue API endpoints.
-4. Add API integration tests proving User A cannot access Workspace B even with guessed entity IDs.
-5. Move the fixture-backed path through API -> PostgreSQL -> BullMQ -> worker -> observation/history API query.
-6. Verify `$100 -> $90 -> malformed page` through that real API path, preserving `$90` as current while health becomes `PARSE_FAILED`.
-7. Only after that gate is green, add the first small operator UI: login, workspace, products, listings, current price, freshness, health, trigger crawl, basic history.
-8. Add actual notification delivery worker later; the current outbox proves deduplicated notification intent, not external delivery.
-
-## Known risks
-
-- Tests still use Node's TypeScript stripping for direct test execution, but the repository now has independent strict `tsc` typecheck and emitted-build gates.
-- The pinned HTTP transport buffers response bodies with a configured cap; streaming/parsing policy needs review before large-scale crawling.
-- Browser fallback and retailer-specific transport/session policies are not implemented yet.
-- International price parsing is intentionally deferred; ambiguous formats are rejected.
-- Notification outbox delivery, retry, signing, and provider failure behavior are not implemented yet.
-- Equal `verified_at` observations currently use ID ordering as a deterministic tie-breaker; future source/event identity may justify a stronger sequence key.
+- Real-world retailer extraction correctness and block/challenge rate are not measured yet.
+- Browser crawler network isolation equivalent to the hardened HTTP transport is not implemented yet.
+- Retailer/session/proxy policy is not implemented yet.
+- Evidence retention/redaction policy is not implemented yet.
+- International price parsing remains intentionally deferred.
+- Notification delivery beyond transactional outbox intent remains open.
+- Equal `verified_at` observations still use ID ordering as a deterministic tie-breaker.
 
 ## Deferred intentionally
 
-- Consumer tracker/browser extension.
+- MAP enforcement.
+- Billing.
 - Automated repricing writes.
 - Automatic product matching.
-- Billing.
-- AI extraction.
+- Consumer browser extension.
+- Broad analytics/dashboard polish.
+- AI extraction until deterministic reliability measurement exists.
