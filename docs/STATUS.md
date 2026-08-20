@@ -2,17 +2,22 @@
 
 ## Current milestone
 
-**Shopify reliability v1 is accepted and frozen on the measured corpus. Best Buy automated source access is also accepted as failed-closed and frozen pending an approved source.**
+**Shopify reliability v1 is accepted/frozen. Best Buy crawler engineering is frozen behind source approval. Source governance is now a version-controlled platform capability, and Walmart has completed its first source-acceptability decision without a new crawler experiment.**
 
-The accepted Shopify claim is deliberately scoped: on the frozen 20-URL / 5-store Shopify corpus with independently reviewed decision truth, `shopify@1.3.0` achieved 100% decision accuracy: 15/15 expected observations correctly priced, 4/4 variant ambiguities correctly abstained, and 1/1 unavailable page correctly classified, with zero false price observations and zero false abstentions.
+The accepted Shopify claim remains deliberately scoped: on the frozen 20-URL / 5-store Shopify corpus with independently reviewed decision truth, `shopify@1.3.0` achieved 100% decision accuracy: 15/15 expected observations correctly priced, 4/4 variant ambiguities correctly abstained, and 1/1 unavailable page correctly classified, with zero false price observations and zero false abstentions.
 
 This is **not** a claim that PriceIntel is 100% accurate on all Shopify stores. It is the accepted baseline for this corpus and adapter version.
 
 The corrected pre-fix replay of Shopify 1.2 scored 95% on the same truth set, with Stag Matches as the sole false abstention. Shopify 1.3's narrow availability-aware variant rule fixed that miss without creating an unsafe observation.
 
-The final Shopify production-safety gate is also complete: competitor listings carry an explicit market contract and unexpected currencies are rejected before persistence as `MARKET_MISMATCH` / `NEEDS_REVIEW`.
+The Shopify market-safety gate is complete: competitor listings carry an explicit market contract and unexpected currencies are rejected before persistence as `MARKET_MISMATCH / NEEDS_REVIEW`.
 
-Best Buy now has a different accepted result: parser capability exists, but the currently reviewed public sources are not operationally approved for PriceIntel's intended use. Production and live-canary access fail closed as `SOURCE_NOT_APPROVED`, including redirect and supplementary-fetch destinations.
+Best Buy has a different accepted result: parser capability exists, but the currently reviewed public sources are not operationally approved for PriceIntel's intended use. Production and live-canary access fail closed as `SOURCE_NOT_APPROVED`, including redirect and supplementary-fetch destinations.
+
+Walmart is now source-reviewed before any new technical experiment:
+
+- `WALMART_PUBLIC_WEB` -> `NOT_APPROVED` for PriceIntel automated collection under the reviewed public terms;
+- `WALMART_MARKETPLACE_API` -> `REVIEW_REQUIRED`, because the API is seller/solution-provider scoped and its use for PriceIntel must be validated through the actual onboarding/authorization/use case before it can become an approved source.
 
 ## Accepted evidence
 
@@ -47,8 +52,6 @@ The queue carries only durable crawl identity. The worker reloads product ID, li
 
 Hardening run `32419254812` on commit `bcefe669fc712cc563222d8c229705b6c6b28cff` passed the full backend + browser gate including the dedicated market-mismatch integration test.
 
-`market_country` and `locale` represent explicit market intent for future retailer-specific request localization. They do not imply that every retailer request is actively localized. The enforced invariant today is that an unexpected currency can never silently become a verified observation.
-
 ### Best Buy direct source gate
 
 Commit `30b4eae2021f320cf54056bb9c544d03bcff6f9d` passed hardening run `32420516534`.
@@ -59,16 +62,26 @@ The real Postgres/Redis/BullMQ regression proves a BestBuy.com listing is reload
 
 Commit `945e0b15e5787973cf983fba64487fd074f571d7` passed hardening run `32421412905`.
 
-`secureFetch()` now accepts a generic target-authorizer callback and invokes it before DNS and transport on every concrete hop. Production worker fetches and the live canary pass `assertAutomatedSourceAccess` into this boundary.
+`secureFetch()` invokes the source authorizer before DNS and transport on every concrete HTTP hop. Regression coverage proves direct denial, approved-origin -> unapproved-destination redirect denial, supplementary redirect denial, and normal approved redirects.
 
-Regression coverage proves:
+### Source-governance registry + Walmart policy
 
-1. direct Best Buy is blocked before DNS/transport;
-2. approved origin -> Best Buy redirect never contacts the Best Buy destination;
-3. supplementary Shopify request -> Best Buy redirect is blocked and surfaced as `SOURCE_NOT_APPROVED`;
-4. approved -> approved redirect remains functional.
+Commit `02cd370c8869216ee2d814ea40bb73a167abeb88` passed hardening run `32422743147`.
 
-An intermediate run `32421300251` failed strict TypeScript only because the authorizer callback was typed as `void` while the source-policy function returns its successful decision object. The callback type was corrected; no behavioral assertion changed.
+The version-controlled registry in `packages/crawler-core/src/source-governance.ts` carries:
+
+- source ID;
+- hostname patterns;
+- status (`APPROVED | NOT_APPROVED | REVIEW_REQUIRED`);
+- permitted access methods (`PUBLIC_HTTP | RETAILER_API | LICENSED_PROVIDER | BROWSER`);
+- review basis;
+- `reviewedAt` / optional `reviewAfter`;
+- evidence reference;
+- operational reason.
+
+Deterministic tests prove registry uniqueness/evidence metadata, preserve the accepted Best Buy redirect gates, and prove Walmart public-web access is denied before DNS/transport. Marketplace API evaluation is separately classified `SOURCE_REVIEW_REQUIRED` when evaluated as `RETAILER_API`.
+
+The Walmart source rationale is recorded in `docs/research/WALMART_SOURCE_DECISION.md`. No Walmart live fetch/browser/API experiment was added as part of this decision.
 
 ## Historical operator milestone
 
@@ -87,7 +100,7 @@ The accepted browser path proves `$100 HEALTHY -> $90 PRICE_CHANGED -> malformed
 - DNS-pinned HTTP(S) transport with redirect revalidation and peer-address verification.
 - Provenance-rich retailer adapter registry and shared `executeExtractionPipeline()` used by production and reliability measurement.
 - Decision-aware truth model distinguishing observations, variant abstentions, unavailable pages, and blocked states.
-- Corrected unsafe-observation metrics: wrong expected prices and unexpected observations are separately visible and combined into the false-price safety count.
+- Corrected unsafe-observation metrics.
 - Bounded supplementary Shopify HTTP extraction through the hardened transport.
 - Shopify `1.3.0` availability-aware variant semantics.
 - Frozen 20-URL / 5-store Shopify truth corpus and accepted 95% -> 100% before/after evidence.
@@ -96,41 +109,44 @@ The accepted browser path proves `$100 HEALTHY -> $90 PRICE_CHANGED -> malformed
 - Identity-only BullMQ crawl messages; worker reloads authoritative crawl configuration from PostgreSQL.
 - Pre-persistence and row-lock-protected `MARKET_MISMATCH` guard.
 - One-shot Shopify corpus/replay/truth/diagnostic workflows removed after baseline acceptance.
-- Best Buy public source review recorded as an operational `SOURCE_NOT_APPROVED / MANUAL_REVIEW` decision, not a broad legal conclusion.
-- Direct Best Buy zero-network production gate accepted.
-- Per-hop HTTP source authorization accepted for initial, redirect, and supplementary requests.
-- Best Buy parser retained as dormant deterministic capability without permission to access the live source.
+- Best Buy direct and per-hop source-denial gates accepted; parser remains dormant.
+- Version-controlled source-governance registry implemented and tested.
+- Walmart public-web source classified `NOT_APPROVED` without another crawler experiment.
+- Walmart Marketplace API kept separate as `REVIEW_REQUIRED` rather than incorrectly treating seller-scoped API capability as blanket approval.
 
-## Reliability lessons preserved
+## Reliability / governance lessons preserved
 
 - A challenge detector that scanned raw scripts produced a false 90% blocked rate; visible-state classification fixed the measurement before accepting it.
 - OpenGraph alone produced a wrong Fish Knife price; Shopify now refuses that source as standalone product evidence.
 - Higher extraction coverage was deliberately reduced when product-level variant ambiguity could not be resolved safely.
-- Scindapsus initially had the wrong verifier truth label. A focused visible-control browser recheck and Shopify source metadata proved both CAD 14.95 and CAD 26.95 variants were live, so the oracle was corrected to abstention rather than changing production logic to satisfy bad truth.
-- Stag Matches was the genuine Shopify 1.2 false abstention; Shopify 1.3 fixed only that measured error while preserving the four correct abstentions.
+- Scindapsus initially had the wrong verifier truth label; the oracle was corrected rather than production logic being weakened.
+- Stag Matches was the genuine Shopify 1.2 false abstention; Shopify 1.3 fixed only that measured error.
 - A technically useful retailer API or parser is not automatically an acceptable production source.
-- Source permission must be enforced per network hop, not only on the original listing URL.
+- Source permission is enforced per network hop, not only on the original listing URL.
+- Source acceptability should precede adapter/corpus work for every new retailer.
+- Public web, retailer API, licensed provider, and browser are separate source methods and may have different approval states for the same retailer.
 
-## Active next program — source governance and acceptable-source research
+## Active next program — next retailer source decision
 
-Shopify and Best Buy crawler engineering are frozen unless a regression, intentional corpus expansion, or newly approved source reopens them.
+Shopify and Best Buy crawler engineering remain frozen. Walmart public-web engineering is also frozen unless its source status changes.
 
-Next work should focus on source governance and the next retailer source decision:
+Next work should continue the source-first sequence rather than increasing scraping sophistication:
 
-1. investigate Best Buy written permission, a separate signed agreement, or a licensed provider whose rights explicitly cover competitor-price intelligence; do not write more Best Buy crawler code meanwhile;
-2. generalize source-registry governance metadata (`APPROVED | NOT_APPROVED | REVIEW_REQUIRED`, basis, reviewedAt, evidence reference, review/expiry date) when doing so benefits multiple retailers;
-3. apply the source-acceptability-first process to Walmart before attempting new crawling techniques;
-4. only after an acceptable source exists, build its source adapter, bounded corpus, decision truth, and reliability score;
-5. keep browser automation out of any attempt to bypass access controls or source restrictions.
+1. validate whether Walmart Marketplace solution-provider/seller authorization can support a narrow PriceIntel seller-scoped feature; otherwise seek a licensed provider with appropriate rights;
+2. start **Target source acceptability review** before any Target crawler work;
+3. then perform the same source decision for Home Depot;
+4. only build a new retailer adapter/corpus when its source is explicitly approved for the intended access method;
+5. select a future production-browser-fallback test retailer only where source permission is approved and rendering—not access permission—is the real technical obstacle.
 
 ## Known risks / intentionally open
 
-- The accepted Shopify score covers 20 URLs / 5 stores, not Shopify as a whole; broader statistical confidence requires intentional corpus expansion.
+- The accepted Shopify score covers 20 URLs / 5 stores, not Shopify as a whole.
 - `market_country` / `locale` are persisted but generic active market selection is not implemented across retailers.
-- Production browser fallback remains disabled; browser network interception is defense-in-depth and cannot replace restrictive deployment egress.
-- Walmart observed challenge pages remain `BLOCKED` until an acceptable source exists.
-- Best Buy has no currently approved automated data source for PriceIntel; progress depends on permission/agreement/licensed-source work rather than crawler engineering.
-- Source-policy registry evidence metadata is currently code/docs-based rather than a durable normalized data model.
+- Production browser fallback remains disabled; browser interception cannot replace restrictive deployment egress.
+- Best Buy has no currently approved automated data source for PriceIntel.
+- Walmart public web is `NOT_APPROVED`; the Marketplace API remains `REVIEW_REQUIRED` pending seller/solution-provider authorization/use-case validation.
+- The source-governance registry currently preserves legacy behavior for **unregistered** generic sources to avoid unexpectedly disabling existing Shopify/generic listings. Formal retailer reliability programs must register a source decision before new live measurement. A future explicit migration may make registry membership mandatory for all production sources.
+- Registry policy is version-controlled code/docs rather than a normalized database service; this is intentional for the initial governance layer.
 - Evidence retention/redaction policy for large raw artifacts remains open.
 - Notification delivery beyond transactional outbox intent remains open.
 - International parsing beyond explicit retailer adapters remains intentionally deferred.
