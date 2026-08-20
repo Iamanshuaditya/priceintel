@@ -48,7 +48,7 @@ export function extractWithAdapters(
       attempts.push({ adapterId:adapter.id, adapterVersion:adapter.version, matched, candidateCount:0, errorCode:errorCode(error) });
     }
   }
-  return { candidates, attempts };
+  return { candidates, attempts, primaryCandidateCount:candidates.length };
 }
 
 export function selectAdapterCandidate(candidates: AdapterCandidate[]): AdapterCandidate {
