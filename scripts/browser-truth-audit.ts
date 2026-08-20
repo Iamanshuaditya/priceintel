@@ -122,20 +122,26 @@ async function boundedVariantProbes(
     return true;
   };
 
-  const variantSelects = page.locator('select[name="id"]');
-  const selectCount = Math.min(await variantSelects.count(), 2);
+  // Interact with the storefront-visible option controls, not Shopify's hidden
+  // no-JS select[name="id"]. The theme should update the hidden variant identity
+  // as a consequence of the same control a shopper uses.
+  const visibleSelects = page.locator('select:visible');
+  const selectCount = Math.min(await visibleSelects.count(), 8);
   for (let selectIndex = 0; selectIndex < selectCount && probes.length < perEntry; selectIndex += 1) {
-    const select = variantSelects.nth(selectIndex);
+    const select = visibleSelects.nth(selectIndex);
+    const name = (await select.getAttribute('name').catch(() => null)) ?? `select-${selectIndex}`;
+    if (/^(?:id|country_code|currency|contact\[Category\])$/i.test(name)) continue;
     const initialValue = await select.inputValue({ timeout:actionTimeout }).catch(() => '');
     const options = await select.locator('option').evaluateAll((items) => items.slice(0, 30).map((option) => ({
       value:(option as HTMLOptionElement).value,
       label:option.textContent?.replace(/\s+/g, ' ').trim() ?? '',
       disabled:(option as HTMLOptionElement).disabled,
     })));
+    if (options.filter((option) => option.value && !option.disabled).length <= 1) continue;
     for (const option of options) {
       if (probes.length >= perEntry || Date.now() >= budget.auditDeadlineMs) break;
       if (!option.value || option.disabled) continue;
-      await record('select', 'id', option.value, option.label, () => select.selectOption(option.value, { timeout:actionTimeout }));
+      await record('select', name, option.value, option.label, () => select.selectOption(option.value, { timeout:actionTimeout }));
     }
     if (initialValue && Date.now() < budget.auditDeadlineMs) {
       await select.selectOption(initialValue, { timeout:actionTimeout }).catch(() => null);
