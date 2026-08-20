@@ -16,7 +16,7 @@ function priceLines(text: string) {
     if (!line || line.length > 220) continue;
     if (!/(?:[$£€]\s?\d)|(?:\b(?:USD|CAD|GBP|EUR)\b.*\d)|(?:\d.*\b(?:USD|CAD|GBP|EUR)\b)/i.test(line)) continue;
     seen.add(line);
-    if (seen.size >= 20) break;
+    if (seen.size >= 30) break;
   }
   return [...seen];
 }
@@ -28,35 +28,52 @@ await mkdir(outputDir, { recursive:true });
 await mkdir(`${outputDir}/screenshots`, { recursive:true });
 
 const browser = await chromium.launch({ headless:true });
-const context = await browser.newContext({
-  ...browserContextSecurityOptions,
-  locale:'en-US',
-  timezoneId:'America/New_York',
-  viewport:{ width:1280, height:900 },
-});
-await context.route('**/*', async (route) => {
-  const request = route.request();
-  if (['image','media','font'].includes(request.resourceType())) {
-    await route.abort('blockedbyclient');
-    return;
-  }
-  const url = request.url();
-  if (!/^https?:/i.test(url)) {
-    await route.continue();
-    return;
-  }
-  await enforceBrowserHttpRoute(route);
-});
-
 const attempts: unknown[] = [];
 for (const entry of corpus) {
+  const context = await browser.newContext({
+    ...browserContextSecurityOptions,
+    locale:'en-US',
+    timezoneId:'America/New_York',
+    viewport:{ width:1280, height:900 },
+  });
+  await context.route('**/*', async (route) => {
+    const request = route.request();
+    if (['image','media','font'].includes(request.resourceType())) {
+      await route.abort('blockedbyclient');
+      return;
+    }
+    const url = request.url();
+    if (!/^https?:/i.test(url)) {
+      await route.continue();
+      return;
+    }
+    await enforceBrowserHttpRoute(route);
+  });
+
   const page = await context.newPage();
   const started = Date.now();
   try {
     const response = await page.goto(entry.url, { waitUntil:'domcontentloaded', timeout:30_000 });
-    await page.waitForTimeout(1_200);
+    await page.waitForTimeout(1_500);
     const bodyText = await page.locator('body').innerText({ timeout:5_000 });
     const h1 = await page.locator('h1').first().innerText({ timeout:2_000 }).catch(() => '');
+    const selectOptions = await page.locator('select').evaluateAll((selects) => selects.slice(0, 12).map((select) => ({
+      name:select.getAttribute('name') ?? select.getAttribute('aria-label') ?? '',
+      value:(select as HTMLSelectElement).value,
+      options:[...(select as HTMLSelectElement).options].slice(0, 30).map((option) => ({
+        text:option.textContent?.replace(/\s+/g, ' ').trim() ?? '',
+        value:option.value,
+        selected:option.selected,
+        disabled:option.disabled,
+      })),
+    })));
+    const radioControls = await page.locator('input[type="radio"]').evaluateAll((radios) => radios.slice(0, 40).map((radio) => ({
+      name:radio.getAttribute('name') ?? '',
+      value:(radio as HTMLInputElement).value,
+      checked:(radio as HTMLInputElement).checked,
+      ariaLabel:radio.getAttribute('aria-label') ?? '',
+      label:radio.id ? document.querySelector(`label[for="${CSS.escape(radio.id)}"]`)?.textContent?.replace(/\s+/g, ' ').trim() ?? '' : '',
+    })));
     const screenshot = `${outputDir}/screenshots/${entry.id}.png`;
     await page.screenshot({ path:screenshot, fullPage:false });
     attempts.push({
@@ -67,6 +84,8 @@ for (const entry of corpus) {
       title:await page.title(),
       h1:h1.replace(/\s+/g, ' ').trim(),
       priceLines:priceLines(bodyText),
+      selectOptions,
+      radioControls,
       screenshot:`screenshots/${entry.id}.png`,
       durationMs:Date.now() - started,
     });
@@ -80,17 +99,29 @@ for (const entry of corpus) {
     });
   } finally {
     await page.close();
+    await context.close();
   }
 }
-await context.close();
 await browser.close();
 
-const report = { runAt:new Date().toISOString(), corpusPath, attempts };
+const report = { runAt:new Date().toISOString(), corpusPath, urlsRequested:corpus.length, attempts };
 await writeFile(`${outputDir}/audit.json`, `${JSON.stringify(report, null, 2)}\n`);
-const markdown = ['# Shopify Browser Truth Audit', '', `Run: ${report.runAt}`, ''];
+const markdown = ['# Shopify Browser Truth Audit', '', `Run: ${report.runAt}`, `URLs: ${corpus.length}`, ''];
 for (const attempt of attempts as Array<Record<string, unknown>>) {
-  markdown.push(`## ${attempt.id}`, '', `- HTTP: ${attempt.status ?? '—'}`, `- Final URL: ${attempt.finalUrl ?? '—'}`, `- H1: ${attempt.h1 ?? '—'}`, `- Price lines: ${JSON.stringify(attempt.priceLines ?? [])}`, `- Error: ${attempt.error ?? '—'}`, '');
+  markdown.push(
+    `## ${attempt.id}`,
+    '',
+    `- HTTP: ${attempt.status ?? '—'}`,
+    `- Final URL: ${attempt.finalUrl ?? '—'}`,
+    `- H1: ${attempt.h1 ?? '—'}`,
+    `- Price lines: ${JSON.stringify(attempt.priceLines ?? [])}`,
+    `- Select controls: ${JSON.stringify(attempt.selectOptions ?? [])}`,
+    `- Radio controls: ${JSON.stringify(attempt.radioControls ?? [])}`,
+    `- Screenshot: ${attempt.screenshot ?? '—'}`,
+    `- Error: ${attempt.error ?? '—'}`,
+    '',
+  );
 }
-markdown.push('> This browser run is an independent test oracle over fixed known URLs. It does not feed production observations and is not a production browser-fallback path.', '');
+markdown.push('> This browser run is an independent test oracle over fixed known URLs. Screenshots, visible page state, and verifier review establish truth; extracted priceLines/control metadata are supporting evidence only. It does not feed production observations and is not a production browser-fallback path.', '');
 await writeFile(`${outputDir}/audit.md`, markdown.join('\n'));
 console.log(markdown.join('\n'));
