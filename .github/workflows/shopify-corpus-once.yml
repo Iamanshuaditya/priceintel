@@ -4,10 +4,14 @@ on:
     branches:
       - "work/priceintel-foundation"
     paths:
+      - ".github/workflows/shopify-corpus-once.yml"
       - "tests/live-canary/shopify-corpus.json"
       - "tests/live-canary/shopify-manual-truth.json"
       - "packages/crawler-core/src/economics.ts"
       - "packages/crawler-core/test/economics.test.ts"
+      - "packages/crawler-core/src/reliability.ts"
+      - "packages/crawler-core/test/reliability.test.ts"
+      - "scripts/reliability-canary.ts"
       - "scripts/reliability-economics.ts"
       - "package.json"
 
