@@ -103,6 +103,7 @@ export interface PinnedTransportInput {
   maxResponseBytes?: number;
 }
 export type PinnedTransport = (input: PinnedTransportInput) => Promise<FetchLikeResponse>;
+export type TargetAuthorizer = (url: string) => void | Promise<void>;
 
 function responseHeaders(message: IncomingMessage) {
   return {
@@ -194,6 +195,7 @@ export const nodePinnedTransport: PinnedTransport = async (input) => {
 export async function secureFetch(input: string, options: {
   resolver?: Resolver;
   transport?: PinnedTransport;
+  authorizeTarget?: TargetAuthorizer;
   maxRedirects?: number;
   timeoutMs?: number;
   maxResponseBytes?: number;
@@ -205,6 +207,10 @@ export async function secureFetch(input: string, options: {
   let current = input;
 
   for (let redirectCount = 0; redirectCount <= maxRedirects; redirectCount += 1) {
+    // Authorization is evaluated for every concrete network hop before DNS or
+    // transport. This keeps source permission and SSRF safety composable while
+    // preventing redirects from crossing into an unapproved source.
+    await options.authorizeTarget?.(current);
     const target = await resolvePublicHttpUrl(current, resolver);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
