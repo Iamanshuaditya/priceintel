@@ -32,7 +32,7 @@ test('source governance registry has unique reviewed records with evidence', () 
   const ids = sourcePolicies.map((policy) => policy.sourceId);
   assert.equal(new Set(ids).size, ids.length, 'source ids must be unique');
   for (const policy of sourcePolicies) {
-    assert.ok(policy.hostnamePatterns.length > 0, `${policy.sourceId} must have a hostname pattern`);
+    assert.ok(policy.hostnamePatterns.length > 0, `${policy.sourceId} must have a verified hostname pattern`);
     assert.match(policy.reviewedAt, /^\d{4}-\d{2}-\d{2}$/);
     assert.ok(policy.evidenceReference.length > 0, `${policy.sourceId} must reference review evidence`);
     if (policy.reviewAfter) assert.ok(policy.reviewAfter > policy.reviewedAt, `${policy.sourceId} reviewAfter must follow reviewedAt`);
@@ -40,6 +40,8 @@ test('source governance registry has unique reviewed records with evidence', () 
   assert.equal(sourcePolicyForId('BESTBUY_PUBLIC_WEB')?.status, 'NOT_APPROVED');
   assert.equal(sourcePolicyForUrl('https://images.bestbuy.com/example')?.sourceId, 'BESTBUY_PUBLIC_WEB');
   assert.equal(sourcePolicyForUrl('https://www.walmart.com/ip/123')?.sourceId, 'WALMART_PUBLIC_WEB');
+  assert.equal(sourcePolicyForUrl('https://www.target.com/p/example/-/A-123')?.sourceId, 'TARGET_PUBLIC_WEB');
+  assert.equal(sourcePolicyForId('TARGET_PLUS_API'), undefined, 'Target Plus API must not get a runtime record until its actual endpoint/scope is verified');
 });
 
 test('Best Buy public web is failed closed pending an approved source agreement', () => {
@@ -79,6 +81,17 @@ test('Walmart public web is not approved while Marketplace API remains review-re
   assert.equal(marketplaceApi.nextAction, 'MANUAL_REVIEW');
 });
 
+test('Target public web is not approved and Target Plus endpoint is intentionally unrouted', () => {
+  const publicWeb = evaluateAutomatedSourceAccess('https://www.target.com/p/example/-/A-123');
+  assert.equal(publicWeb.allowed, false);
+  assert.equal(publicWeb.sourceId, 'TARGET_PUBLIC_WEB');
+  assert.equal(publicWeb.status, 'NOT_APPROVED');
+  assert.equal(publicWeb.code, 'SOURCE_NOT_APPROVED');
+  assert.equal(publicWeb.nextAction, 'MANUAL_REVIEW');
+  assert.equal(publicWeb.evidenceReference, 'docs/research/TARGET_SOURCE_DECISION.md');
+  assert.equal(sourcePolicyForId('TARGET_PLUS_API'), undefined);
+});
+
 test('source approval gate does not block unrelated retailers', () => {
   assert.deepEqual(evaluateAutomatedSourceAccess('https://example.com/products/widget'), { allowed:true });
   assert.doesNotThrow(() => assertAutomatedSourceAccess('https://www.gymshark.com/products/widget'));
@@ -115,6 +128,24 @@ test('Walmart public web is rejected before DNS or transport', async () => {
   );
   assert.equal(resolverCalls, 0);
   assert.equal(transportCalls, 0);
+});
+
+test('Target public web is rejected before DNS or transport', async () => {
+  let resolverCalls = 0;
+  let transportCalls = 0;
+  await assert.rejects(
+    secureFetch('https://www.target.com/p/example/-/A-123', {
+      authorizeTarget:assertAutomatedSourceAccess,
+      resolver:async () => { resolverCalls += 1; return [PUBLIC_IP]; },
+      transport:async () => { transportCalls += 1; return response(200); },
+    }),
+    (error: unknown) => {
+      const value = error as {code?:string;sourceId?:string};
+      return value.code === 'SOURCE_NOT_APPROVED' && value.sourceId === 'TARGET_PUBLIC_WEB';
+    },
+  );
+  assert.equal(resolverCalls, 0, 'Target policy must run before DNS');
+  assert.equal(transportCalls, 0, 'Target public web must never reach transport');
 });
 
 test('allowed source redirecting to unapproved source never contacts redirect destination', async () => {
