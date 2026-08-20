@@ -1,6 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chooseFallbackDecision, evaluateTruth, isLikelyChallengePage, truthSummary } from '../src/reliability.ts';
+import {
+  chooseFallbackDecision,
+  decisionTruthSummary,
+  evaluateDecisionTruth,
+  evaluateTruth,
+  isLikelyChallengePage,
+  truthSummary,
+} from '../src/reliability.ts';
 
 const now = new Date('2026-08-20T06:00:00Z').getTime();
 const truth = { visiblePrice:100, currency:'USD', verifiedAt:'2026-08-20T05:30:00Z' };
@@ -26,6 +33,61 @@ test('correctness among extracted truth is null when coverage is zero', () => {
   assert.equal(summary.truthExtractionCoveragePct, 0);
   assert.equal(summary.correctnessAmongExtractedTruthPct, null);
   assert.equal(summary.endToEndCorrectCoveragePct, 0);
+});
+
+test('decision truth scores observations and variant abstentions separately', () => {
+  const observationTruth = {
+    expectation:'OBSERVATION' as const,
+    visiblePrice:100,
+    currency:'USD',
+    verifiedAt:'2026-08-20T05:30:00Z',
+  };
+  const abstainTruth = {
+    expectation:'ABSTAIN_VARIANT_AMBIGUITY' as const,
+    variantPrices:[14.98,28.5],
+    currency:'USD',
+    reason:'Variant prices differ',
+    verifiedAt:'2026-08-20T05:30:00Z',
+  };
+  const correctObservation = evaluateDecisionTruth(observationTruth, {price:100,currency:'USD',challenge:false,httpStatus:200}, now, 24);
+  const falseAbstention = evaluateDecisionTruth(observationTruth, {challenge:false,httpStatus:200}, now, 24);
+  const correctAbstention = evaluateDecisionTruth(abstainTruth, {challenge:false,httpStatus:200}, now, 24);
+  const falseObservation = evaluateDecisionTruth(abstainTruth, {price:14.98,currency:'USD',challenge:false,httpStatus:200}, now, 24);
+
+  assert.equal(correctObservation.decisionCorrect, true);
+  assert.equal(falseAbstention.actualDecision, 'ABSTAIN');
+  assert.equal(falseAbstention.decisionCorrect, false);
+  assert.equal(correctAbstention.decisionCorrect, true);
+  assert.equal(falseObservation.decisionCorrect, false);
+
+  const summary = decisionTruthSummary([correctObservation, falseAbstention, correctAbstention, falseObservation]);
+  assert.equal(summary.expectedObservations, 2);
+  assert.equal(summary.correctObservations, 1);
+  assert.equal(summary.observationPriceCorrectnessPct, 50);
+  assert.equal(summary.expectedAbstentions, 2);
+  assert.equal(summary.correctAbstentions, 1);
+  assert.equal(summary.abstentionAccuracyPct, 50);
+  assert.equal(summary.falseAbstentions, 1);
+  assert.equal(summary.overallDecisionAccuracyPct, 50);
+});
+
+test('decision truth scores unavailable and blocked independently', () => {
+  const unavailable = evaluateDecisionTruth(
+    { expectation:'UNAVAILABLE', verifiedAt:'2026-08-20T05:30:00Z', reason:'404' },
+    { challenge:false, httpStatus:404 },
+    now,
+    24,
+  );
+  const blocked = evaluateDecisionTruth(
+    { expectation:'BLOCKED', verifiedAt:'2026-08-20T05:30:00Z', reason:'challenge' },
+    { challenge:true, httpStatus:200 },
+    now,
+    24,
+  );
+  const summary = decisionTruthSummary([unavailable, blocked]);
+  assert.equal(summary.correctUnavailable, 1);
+  assert.equal(summary.correctBlocked, 1);
+  assert.equal(summary.overallDecisionAccuracyPct, 100);
 });
 
 test('fallback classification does not treat explicit challenge as browser-render work', () => {
