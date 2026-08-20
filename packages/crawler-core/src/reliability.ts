@@ -214,7 +214,8 @@ export function truthSummary(evaluations: TruthEvaluation[]) {
 export function decisionTruthSummary(evaluations: DecisionTruthEvaluation[]) {
   const fresh = evaluations.filter((item) => item.fresh);
   const observations = fresh.filter((item) => item.expectation === 'OBSERVATION');
-  const correctObservations = observations.filter((item) => item.decisionCorrect === true);
+  const producedObservations = observations.filter((item) => item.actualDecision === 'OBSERVATION');
+  const correctObservationPrices = producedObservations.filter((item) => item.priceCorrect === true);
   const abstentions = fresh.filter((item) => item.expectation === 'ABSTAIN_VARIANT_AMBIGUITY');
   const correctAbstentions = abstentions.filter((item) => item.decisionCorrect === true);
   const unavailable = fresh.filter((item) => item.expectation === 'UNAVAILABLE');
@@ -225,8 +226,10 @@ export function decisionTruthSummary(evaluations: DecisionTruthEvaluation[]) {
   return {
     freshDecisionTruthSamples:fresh.length,
     expectedObservations:observations.length,
-    correctObservations:correctObservations.length,
-    observationPriceCorrectnessPct:pct(correctObservations.length, observations.length),
+    producedObservations:producedObservations.length,
+    observationTruthCoveragePct:pct(producedObservations.length, observations.length),
+    correctObservationPrices:correctObservationPrices.length,
+    observationPriceCorrectnessPct:pct(correctObservationPrices.length, producedObservations.length),
     expectedAbstentions:abstentions.length,
     correctAbstentions:correctAbstentions.length,
     abstentionAccuracyPct:pct(correctAbstentions.length, abstentions.length),
@@ -236,7 +239,7 @@ export function decisionTruthSummary(evaluations: DecisionTruthEvaluation[]) {
     expectedBlocked:blocked.length,
     correctBlocked:correctBlocked.length,
     blockedAccuracyPct:pct(correctBlocked.length, blocked.length),
-    falsePriceObservations:observations.filter((item) => item.actualDecision === 'OBSERVATION' && item.priceCorrect === false).length,
+    falsePriceObservations:producedObservations.filter((item) => item.priceCorrect === false).length,
     falseAbstentions:observations.filter((item) => item.actualDecision === 'ABSTAIN').length,
     overallDecisionAccuracyPct:pct(correctAll.length, fresh.length),
   };
