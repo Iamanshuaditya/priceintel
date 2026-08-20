@@ -1,0 +1,65 @@
+name: shopify-baseline-replay-once
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "work/priceintel-foundation"
+    paths:
+      - ".github/workflows/shopify-baseline-replay-once.yml"
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  replay-shopify-1-2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Preserve amended truth and checkout pre-fix extraction head
+        run: |
+          cp tests/live-canary/shopify-manual-truth.json /tmp/shopify-manual-truth.json
+          git checkout --detach a050bcf1d3f1140016046fb404bc1deae9132f02
+          cp /tmp/shopify-manual-truth.json tests/live-canary/shopify-manual-truth.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Replay Shopify 1.2 against amended decision truth
+        id: replay
+        run: |
+          mkdir -p artifacts/reliability/shopify-replay
+          printf '{"measuredCommit":"a050bcf1d3f1140016046fb404bc1deae9132f02","truthCommit":"d7f9d3f7c22e1432b00c347ffc0b59de8eef7647","workflowHead":"%s"}\n' "$GITHUB_SHA" > artifacts/reliability/shopify-replay/replay-metadata.json
+          node --disable-warning=ExperimentalWarning --experimental-strip-types scripts/reliability-canary.ts \
+            --corpus tests/live-canary/shopify-corpus.json \
+            --truth tests/live-canary/shopify-manual-truth.json \
+            --output artifacts/reliability/shopify-replay
+          node --disable-warning=ExperimentalWarning --experimental-strip-types scripts/reliability-economics.ts \
+            --input artifacts/reliability/shopify-replay/latest.json \
+            --output artifacts/reliability/shopify-replay
+      - name: Upload corrected pre-fix baseline
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: priceintel-shopify-1-2-amended-truth-${{ github.sha }}
+          path: artifacts/reliability/shopify-replay
+          if-no-files-found: ignore
+          retention-days: 30
+      - name: Publish replay status
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STATE: ${{ steps.replay.outcome == 'success' && 'success' || 'failure' }}
+        run: |
+          curl --fail-with-body -sS -L \
+            -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+            -d "{\"state\":\"$STATE\",\"context\":\"priceintel/shopify-baseline-replay\",\"description\":\"Shopify 1.2 amended-truth replay: $STATE\",\"target_url\":\"$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID\"}"
