@@ -35,7 +35,7 @@ test('correctness among extracted truth is null when coverage is zero', () => {
   assert.equal(summary.endToEndCorrectCoveragePct, 0);
 });
 
-test('decision truth scores observation coverage, price accuracy, and variant abstentions separately', () => {
+test('decision truth reports wrong prices separately from unsafe unexpected observations', () => {
   const observationTruth = {
     expectation:'OBSERVATION' as const,
     visiblePrice:100,
@@ -53,9 +53,9 @@ test('decision truth scores observation coverage, price accuracy, and variant ab
   const wrongObservation = evaluateDecisionTruth(observationTruth, {price:90,currency:'USD',challenge:false,httpStatus:200}, now, 24);
   const falseAbstention = evaluateDecisionTruth(observationTruth, {challenge:false,httpStatus:200}, now, 24);
   const correctAbstention = evaluateDecisionTruth(abstainTruth, {challenge:false,httpStatus:200}, now, 24);
-  const falseObservation = evaluateDecisionTruth(abstainTruth, {price:14.98,currency:'USD',challenge:false,httpStatus:200}, now, 24);
+  const unsafeObservation = evaluateDecisionTruth(abstainTruth, {price:14.98,currency:'USD',challenge:false,httpStatus:200}, now, 24);
 
-  const summary = decisionTruthSummary([correctObservation, wrongObservation, falseAbstention, correctAbstention, falseObservation]);
+  const summary = decisionTruthSummary([correctObservation, wrongObservation, falseAbstention, correctAbstention, unsafeObservation]);
   assert.equal(summary.expectedObservations, 3);
   assert.equal(summary.producedObservations, 2);
   assert.equal(summary.observationTruthCoveragePct, 66.7);
@@ -64,9 +64,22 @@ test('decision truth scores observation coverage, price accuracy, and variant ab
   assert.equal(summary.expectedAbstentions, 2);
   assert.equal(summary.correctAbstentions, 1);
   assert.equal(summary.abstentionAccuracyPct, 50);
-  assert.equal(summary.falsePriceObservations, 1);
+  assert.equal(summary.wrongExpectedObservationPrices, 1);
+  assert.equal(summary.unexpectedObservations, 1);
+  assert.equal(summary.falsePriceObservations, 2);
   assert.equal(summary.falseAbstentions, 1);
   assert.equal(summary.overallDecisionAccuracyPct, 40);
+});
+
+test('unexpected observations include prices emitted against unavailable and blocked truth', () => {
+  const unavailableTruth = { expectation:'UNAVAILABLE' as const, verifiedAt:'2026-08-20T05:30:00Z', reason:'404' };
+  const blockedTruth = { expectation:'BLOCKED' as const, verifiedAt:'2026-08-20T05:30:00Z', reason:'challenge' };
+  const unsafeUnavailable = evaluateDecisionTruth(unavailableTruth, {price:20,currency:'USD',challenge:false,httpStatus:200}, now, 24);
+  const unsafeBlocked = evaluateDecisionTruth(blockedTruth, {price:30,currency:'USD',challenge:false,httpStatus:200}, now, 24);
+  const summary = decisionTruthSummary([unsafeUnavailable, unsafeBlocked]);
+  assert.equal(summary.unexpectedObservations, 2);
+  assert.equal(summary.falsePriceObservations, 2);
+  assert.equal(summary.overallDecisionAccuracyPct, 0);
 });
 
 test('decision truth scores unavailable and blocked independently', () => {
