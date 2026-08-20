@@ -1,17 +1,16 @@
-import { readFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
 import { Pool, type PoolClient } from 'pg';
 import type { ListingHealth, PriceObservation, StockStatus } from '../../domain/src/index.ts';
+import { runMigrations } from './migrations.ts';
 
 export function createDatabasePool(connectionString = process.env.DATABASE_URL) {
   if (!connectionString) throw new Error('DATABASE_URL is required');
   return new Pool({ connectionString, max: 10 });
 }
 
+// Backward-compatible integration-test helper. The real migration boundary is the
+// checksum-locked ledger; tests must exercise the same ordered migration set.
 export async function migrate(pool: Pool) {
-  const path = fileURLToPath(new URL('../migrations/001_foundation.sql', import.meta.url));
-  const sql = await readFile(path, 'utf8');
-  await pool.query(sql);
+  return runMigrations(pool);
 }
 
 export async function truncateAll(pool: Pool) {
