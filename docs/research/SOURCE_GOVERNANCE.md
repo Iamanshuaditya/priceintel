@@ -29,7 +29,9 @@ Do **not** guess a production API hostname merely to represent a governance conc
 
 A source can be documented as conceptually `REVIEW_REQUIRED` while its actual runtime endpoint, scopes, or account context are still unknown. Such a source should not receive a URL-matching runtime registry record until the address and relevant access contract are verified.
 
-Target Plus is the first explicit example: public evidence establishes a seller/developer integration surface, so its source-review conclusion is `REVIEW_REQUIRED`, but the reviewed public material does not establish the production API hostname/scopes needed for safe runtime matching. `TARGET_PLUS_API` therefore remains documented but intentionally absent from `sourcePolicies` until those facts are verified.
+Target Plus is one explicit example: public evidence establishes a seller/developer integration surface, so its source-review conclusion is `REVIEW_REQUIRED`, but the reviewed public material does not establish the production API hostname/scopes needed for safe runtime matching. `TARGET_PLUS_API` therefore remains documented but intentionally absent from `sourcePolicies` until those facts are verified.
+
+Home Depot supplier/partner data is another example. Public material establishes Supplier Hub onboarding, market insights and operational integration capability, but not a verified PriceIntel-suitable data interface or competitor-intelligence permission. `HOME_DEPOT_SUPPLIER_PARTNER_DATA` is therefore a research-level `REVIEW_REQUIRED` conclusion and is intentionally absent from runtime matching.
 
 This prevents source governance from accidentally authorizing, denying, or probing an endpoint inferred from a portal hostname rather than an actual source contract.
 
@@ -106,10 +108,12 @@ As of 2026-08-21, runtime registry records are:
 - `BESTBUY_PUBLIC_WEB` — `NOT_APPROVED`;
 - `WALMART_PUBLIC_WEB` — `NOT_APPROVED`;
 - `WALMART_MARKETPLACE_API` — `REVIEW_REQUIRED`;
-- `TARGET_PUBLIC_WEB` — `NOT_APPROVED`.
+- `TARGET_PUBLIC_WEB` — `NOT_APPROVED`;
+- `HOME_DEPOT_PUBLIC_WEB` — `NOT_APPROVED`.
 
 Reviewed but intentionally not runtime-routed yet:
 
-- `TARGET_PLUS_API` — `REVIEW_REQUIRED`; exact production API hostname/scopes still need verification.
+- `TARGET_PLUS_API` — `REVIEW_REQUIRED`; exact production API hostname/scopes still need verification;
+- `HOME_DEPOT_SUPPLIER_PARTNER_DATA` — `REVIEW_REQUIRED`; actual interface/agreement/permitted use still need verification.
 
-Best Buy parser capability remains dormant/tested while its live source is frozen. Walmart and Target source decisions are documented separately in `docs/research/WALMART_SOURCE_DECISION.md` and `docs/research/TARGET_SOURCE_DECISION.md`.
+Best Buy parser capability remains dormant/tested while its live source is frozen. Walmart, Target and Home Depot source decisions are documented separately in `docs/research/WALMART_SOURCE_DECISION.md`, `docs/research/TARGET_SOURCE_DECISION.md`, and `docs/research/HOME_DEPOT_SOURCE_DECISION.md`.
