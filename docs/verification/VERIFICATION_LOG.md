@@ -123,7 +123,7 @@ The job independently passed:
 - locked `npm ci` install;
 - strict TypeScript typecheck;
 - foundation/security/vertical tests;
-- PostgreSQL/Redis/BullMQ integration suite (**10/10**);
+- PostgreSQL/Redis/BullMQ integration suite;
 - emitted build + compiled migration execution;
 - Chromium installation;
 - Playwright operator E2E;
@@ -137,20 +137,134 @@ Evidence artifact:
 
 The screenshots were independently visually inspected after CI. They clearly show the healthy `$100` state, the `$90` price-change/history state, and the `PARSE_FAILED` state with `$90` retained as the last verified value plus the explicit warning that it is not being treated as fresh.
 
-## Next verification program — Retailer Reliability
+## 2026-08-20 — Retailer Reliability measurement architecture
 
-The next acceptance gate is not “more CRUD.” It must measure real extraction reliability.
+The reliability program moved production extraction behind a retailer adapter registry and a shared `executeExtractionPipeline()` used by production and the live canary. Candidate provenance includes adapter/version/source information and supplementary artifacts are fetched only through the hardened HTTP boundary with explicit request/byte/time budgets.
 
-Required gates:
+Decision truth now distinguishes:
 
-- adapter interface + adapter/version provenance;
-- generic structured extractor behind the interface;
-- deterministic adapter contracts;
-- Shopify plus at least two major US retailer adapters;
-- evidence/extraction trace model;
-- controlled live URL corpus;
-- live-canary command and automatically generated retailer health report;
-- explicit distinction between transport success, extraction success, and manually sampled correctness;
-- browser fallback architecture;
-- browser-specific private/local network blocking before production browser navigation;
-- deterministic CI remains blocking; live Internet canaries run manually/scheduled and do not make ordinary PR CI nondeterministic.
+- `OBSERVATION`;
+- `ABSTAIN_VARIANT_AMBIGUITY`;
+- `UNAVAILABLE`;
+- `BLOCKED`.
+
+Metrics separately report observation truth coverage, price correctness, abstention accuracy, unavailable/blocked correctness, wrong expected-observation prices, unsafe unexpected observations, false abstentions, and overall decision accuracy.
+
+The browser truth audit is an independent test oracle. Screenshots/visible page state and verifier review establish truth; automatically extracted snippets/control metadata are supporting evidence only and never become production observations.
+
+Measurement failures preserved during the program include:
+
+- first live canary exposed Node's custom DNS lookup `{all:true}` callback-shape incompatibility; transport was fixed and regression-tested rather than blaming retailers;
+- raw-script anti-bot words caused a false 90% challenge rate; challenge detection was restricted to explicit status/final URL/visible page state before trusting corpus metrics;
+- Shopify OpenGraph metadata produced an unsafe Fish Knife product-level price; OpenGraph was removed as standalone price evidence;
+- an over-broad variant browser audit exhausted its 25-minute workflow budget; the verifier was changed to opt-in targeted probes with per-entry/global/per-probe/whole-audit budgets rather than increasing CI timeout.
+
+## 2026-08-20 — Shopify truth/oracle correction
+
+The 20-URL / 5-store Shopify corpus was independently reviewed with browser evidence and decision-aware truth.
+
+A critical verifier correction is preserved:
+
+- Source diagnostic run `32394981279`, artifact `9416281097`, SHA-256 `cd27d02fe5b692fbe4223be963c7613d1cb325a45bf38edbba71a022bb8495cf` showed Miss Boon Scindapsus variants CAD `14.95` and `26.95` both reported available by Shopify product data.
+- Focused visible-control browser recheck run `32395208368`, artifact `9416381316`, SHA-256 `29b2c20c50df56f9484d3981720f4a62825a3bb8a89b6a61b0ca68c84d2a274d` successfully selected the visible 6-inch control and changed the rendered price from CAD `14.95` to CAD `26.95`.
+- The truth row was therefore corrected from expected observation to `ABSTAIN_VARIANT_AMBIGUITY`.
+
+Production extraction was **not** changed to satisfy the earlier incorrect oracle.
+
+## 2026-08-20 — Corrected Shopify 1.2 baseline replay
+
+The replay workflow preserved the amended truth, checked out the pre-fix code at `a050bcf1d3f1140016046fb404bc1deae9132f02`, then scored that implementation against the corrected truth.
+
+Run `32395534870`: **PASS**.
+
+Artifact:
+
+- ID: `9416480111`;
+- SHA-256: `bdcb3030b4b77407d6f1a866afc690f0c0ab7d90a0de08c3d1903ad2a0a44ec3`.
+
+Decision score:
+
+- expected observations: 15;
+- produced observations: 14/15 (93.3%);
+- correct produced prices: 14/14 (100%);
+- expected abstentions: 4; correct: 4/4;
+- unavailable: 1/1;
+- wrong prices: 0;
+- unsafe unexpected observations: 0;
+- false price observations: 0;
+- false abstentions: 1;
+- overall decision accuracy: **95%**.
+
+The sole miss was Mollyjogger Stag Matches: the crawler abstained even though the differing-price alternate variant was sold out and the live/default variant was a valid `$10` observation.
+
+## 2026-08-20 — Shopify 1.3 accepted baseline
+
+`shopify@1.3.0` introduced one narrow rule: unavailable variants may be excluded from product-level price ambiguity only when availability evidence is complete. Multiple differently priced currently relevant/available variants still produce no product-level observation. Missing/incomplete availability remains conservative, and explicit `?variant=` URLs retain variant-specific behavior.
+
+Run `32395507110`: **PASS**.
+
+Artifact:
+
+- ID: `9416476817`;
+- SHA-256: `cf9dbc2a88f200ea1ecc04a5be6f85f380022bb7e7f214c2f097bac25573291d`.
+
+Decision score against the exact same corrected truth:
+
+- expected observations: 15;
+- produced observations: 15/15;
+- correct prices: 15/15 (100%);
+- expected abstentions: 4; correct: 4/4;
+- unavailable: 1/1;
+- wrong prices: 0;
+- unsafe unexpected observations: 0;
+- false price observations: 0;
+- false abstentions: 0;
+- overall decision accuracy: **100%**.
+
+Accepted scope statement:
+
+> On the frozen 20-URL / 5-store Shopify corpus with independently reviewed decision truth, `shopify@1.3.0` achieved 100% decision accuracy: 15/15 expected observations correctly priced, 4/4 variant ambiguities correctly abstained, and 1/1 unavailable page correctly classified, with zero false price observations and zero false abstentions.
+
+This evidence does **not** support the broader statement “PriceIntel is 100% accurate on Shopify.”
+
+## 2026-08-20 — Listing market-context safety gate
+
+Migration `004_listing_market_context.sql` adds `expected_currency`, `market_country`, and `locale` to monitored listings. Existing expected currency is backfilled from the parent product before becoming non-null.
+
+BullMQ crawl messages are now identity-only. The worker reloads authoritative product ID, URL, and market contract from PostgreSQL after claiming the run.
+
+A currency mismatch is rejected before observation persistence as `MARKET_MISMATCH`; persistence repeats the guard under the listing row lock. It becomes listing health `NEEDS_REVIEW`.
+
+Dedicated integration test `tests/integration/market-context.test.ts` proves:
+
+1. baseline `$100 USD` verified history exists;
+2. crawl is enqueued with identity only;
+3. listing URL is changed in PostgreSQL after enqueue;
+4. worker fetches the changed PostgreSQL URL, proving queue data is not authoritative;
+5. fixture returns `$90 CAD` for an `expected_currency = USD` listing;
+6. crawl fails `MARKET_MISMATCH`;
+7. observation count remains exactly 1;
+8. changes and outbox remain 0;
+9. current `$100 USD` / stock / prior successful timestamp are preserved;
+10. `last_crawl_at`, failure count/code, and `NEEDS_REVIEW` advance as failure metadata only.
+
+Commit `bcefe669fc712cc563222d8c229705b6c6b28cff` passed the complete hardening gate in run `32419254812`, including strict TypeScript, deterministic/security suites, PostgreSQL/Redis integration, build/migration execution, and operator Chromium E2E.
+
+## 2026-08-20 — Shopify v1 closure cleanup
+
+After the corrected before/after baseline and market-context gate were accepted, the temporary Shopify one-shot workflows were removed:
+
+- `shopify-baseline-replay-once.yml`;
+- `shopify-corpus-once.yml`;
+- `shopify-source-diagnostic-once.yml`;
+- `shopify-truth-audit-once.yml`.
+
+Single-retailer diagnostic scripts for the Scindapsus recheck, Shopify variant source diagnostic, and earlier Gymshark diagnosis were also removed. The reusable bounded `browser-truth-audit.ts`, permanent scheduled/manual live canary, shared reliability canary, corpus/truth data, and deterministic adapter tests remain.
+
+## Next verification program — Best Buy source reliability
+
+Shopify v1 is frozen unless an intentional regression/corpus-expansion program reopens it.
+
+Next verification work must first establish an acceptable Best Buy source strategy. The currently known public developer API should remain `MANUAL_REVIEW` for PriceIntel's intended third-party price-analysis use unless a suitable written agreement permits it.
+
+An acceptable Best Buy source should then be evaluated through deterministic source contracts plus a bounded real corpus measuring source access, extraction, decision truth, latency/bytes, and failure classification. Browser automation must not be used to bypass access controls or anti-bot challenges.
