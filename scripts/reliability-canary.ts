@@ -14,6 +14,7 @@ import {
   type TruthEvaluation,
   type TruthSample,
 } from '../packages/crawler-core/src/reliability.ts';
+import { assertAutomatedSourceAccess } from '../packages/crawler-core/src/source-access-policy.ts';
 import { secureFetch } from '../packages/crawler-core/src/url-policy.ts';
 
 interface CorpusEntry {
@@ -107,6 +108,10 @@ async function runOne(entry: CorpusEntry, truth: TruthFile, maxTruthAgeHours: nu
   let httpStatus: number | undefined;
   let fetchDurationMs = 0;
   try {
+    // Source permission is a preflight gate, not an extraction outcome. A dormant
+    // parser must not cause the live canary to access an unapproved retailer.
+    assertAutomatedSourceAccess(entry.url);
+
     const fetchStart = performance.now();
     const artifact = await fetchArtifact(entry.url);
     fetchDurationMs = Math.round(performance.now() - fetchStart);
@@ -300,7 +305,7 @@ function markdown(runAt: string, summary: ReturnType<typeof summarize>, attempts
   for (const item of attempts) {
     lines.push(`| ${item.retailer} | ${item.httpStatus ?? '—'} | ${item.adapter ?? '—'} | ${item.price ?? '—'} ${item.currency ?? ''} | ${item.stockStatus ?? '—'} | ${item.primaryCandidateCount} | ${item.supplementaryRequestCount} | ${item.fallbackDecision} | ${item.challenge ? 'yes' : 'no'} | ${item.errorCode ?? '—'} | ${item.decisionTruth?.expectation ?? 'NO_TRUTH'} | ${item.decisionTruth?.actualDecision ?? '—'} | ${item.decisionTruth?.state ?? 'NO_TRUTH'} |`);
   }
-  lines.push('', '> Live canaries measure behavior; they are intentionally not a deterministic release gate. Production and canary use the same executeExtractionPipeline orchestrator. Browser audit evidence is an independent verification input and does not feed observations.', '');
+  lines.push('', '> Live canaries measure behavior; they are intentionally not a deterministic release gate. Production and canary use the same executeExtractionPipeline orchestrator. Source permission is checked before live network access; parser capability is not treated as source approval. Browser audit evidence is an independent verification input and does not feed observations.', '');
   return lines.join('\n');
 }
 
