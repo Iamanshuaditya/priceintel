@@ -12,14 +12,16 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node --experimental-strip-types scripts/copy-build-assets.ts",
     "test": "node --disable-warning=ExperimentalWarning --experimental-strip-types --test tests/*.test.ts packages/*/test/*.test.ts",
     "test:security": "node --disable-warning=ExperimentalWarning --experimental-strip-types --test packages/crawler-core/test/url-policy.test.ts",
     "test:vertical": "node --disable-warning=ExperimentalWarning --experimental-strip-types --test tests/vertical-slice.test.ts",
     "fixture": "node --disable-warning=ExperimentalWarning --experimental-strip-types apps/fixture-server/src/main.ts",
     "demo": "node --disable-warning=ExperimentalWarning --experimental-strip-types scripts/demo-first-slice.ts",
     "db:migrate": "node --disable-warning=ExperimentalWarning --experimental-strip-types scripts/migrate.ts",
-    "test:integration": "node --disable-warning=ExperimentalWarning --experimental-strip-types --test --test-concurrency=1 tests/integration/*.test.ts"
+    "test:integration": "node --disable-warning=ExperimentalWarning --experimental-strip-types --test --test-concurrency=1 tests/integration/*.test.ts",
+    "api": "node --disable-warning=ExperimentalWarning --experimental-strip-types apps/api/src/main.ts",
+    "worker": "node --disable-warning=ExperimentalWarning --experimental-strip-types apps/worker/src/main.ts"
   },
   "dependencies": {
     "bullmq": "6.1.1",

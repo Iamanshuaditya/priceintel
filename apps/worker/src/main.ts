@@ -1,0 +1,31 @@
+import { secureFetch } from '../../../packages/crawler-core/src/url-policy.ts';
+import { createDatabasePool } from '../../../packages/db/src/index.ts';
+import { createCrawlWorker } from '../../../packages/jobs/src/crawl-queue.ts';
+import { buildCrawlProcessor } from '../../../packages/jobs/src/worker.ts';
+import { migrateApplication } from '../../api/src/storage.ts';
+
+const pool = createDatabasePool();
+await migrateApplication(pool);
+
+const fetchHtml = async (url: string) => {
+  const { response, finalUrl } = await secureFetch(url);
+  if (response.status < 200 || response.status >= 300) {
+    throw Object.assign(new Error(`HTTP ${response.status}`), { code:`HTTP_${response.status}` });
+  }
+  return { html:await response.text(), finalUrl };
+};
+
+const worker = createCrawlWorker(buildCrawlProcessor(pool, fetchHtml));
+await worker.waitUntilReady();
+console.log('PriceIntel crawl worker ready');
+
+let closing = false;
+async function shutdown() {
+  if (closing) return;
+  closing = true;
+  await worker.close();
+  await pool.end();
+}
+
+process.once('SIGINT', () => void shutdown().finally(() => process.exit(0)));
+process.once('SIGTERM', () => void shutdown().finally(() => process.exit(0)));
