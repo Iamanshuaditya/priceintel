@@ -86,6 +86,7 @@ function ratio(numerator: number, denominator: number) {
 
 async function fetchArtifact(url: string, options: {timeoutMs?:number;maxResponseBytes?:number} = {}): Promise<FetchArtifact> {
   const fetched = await secureFetch(url, {
+    authorizeTarget:assertAutomatedSourceAccess,
     timeoutMs:options.timeoutMs ?? 20_000,
     maxResponseBytes:options.maxResponseBytes ?? 10 * 1024 * 1024,
   });
