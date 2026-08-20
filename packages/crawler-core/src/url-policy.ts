@@ -103,7 +103,7 @@ export interface PinnedTransportInput {
   maxResponseBytes?: number;
 }
 export type PinnedTransport = (input: PinnedTransportInput) => Promise<FetchLikeResponse>;
-export type TargetAuthorizer = (url: string) => void | Promise<void>;
+export type TargetAuthorizer = (url: string) => unknown | Promise<unknown>;
 
 function responseHeaders(message: IncomingMessage) {
   return {
