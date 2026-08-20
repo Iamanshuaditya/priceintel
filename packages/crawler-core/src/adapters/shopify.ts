@@ -1,4 +1,4 @@
-import { availabilityToStockStatus, extractJsonLdCandidates, parsePriceUSFirst } from '../jsonld.ts';
+import { extractJsonLdCandidates } from '../jsonld.ts';
 import type { AdapterCandidate, RetailerAdapter, SupplementaryArtifact, SupplementaryRequest } from './types.ts';
 import { withProvenance } from './types.ts';
 import { attrValue, attribute, hostnameOf, scriptJson } from './helpers.ts';
@@ -54,26 +54,6 @@ function productJsonCandidates(html: string, adapter: RetailerAdapter): AdapterC
     });
   }
   return candidates;
-}
-
-function openGraphCandidate(html: string, adapter: RetailerAdapter): AdapterCandidate[] {
-  const amount = attrValue(html, 'meta', 'property', 'og:price:amount', 'content');
-  const currency = shopifyCurrency(html);
-  const price = parsePriceUSFirst(amount);
-  if (price === undefined || !currency) return [];
-  const availability = attrValue(html, 'meta', 'property', 'product:availability', 'content');
-  return [{
-    price,
-    currency,
-    stockStatus: availabilityToStockStatus(availability),
-    sourceMethod: 'RETAILER_ADAPTER',
-    confidence: 0.75,
-    provenance: {
-      adapterId: adapter.id,
-      adapterVersion: adapter.version,
-      sourcePath: 'meta[property="og:price:amount"]',
-    },
-  }];
 }
 
 function parseJsonObject(raw: string) {
@@ -156,9 +136,17 @@ function ajaxProductCandidate(primaryUrl: string, product: Record<string, unknow
   }];
 }
 
+function needsSupplementaryEvidence(primaryCandidates: AdapterCandidate[]) {
+  if (!primaryCandidates.length) return true;
+  const bestConfidence = Math.max(...primaryCandidates.map((candidate) => candidate.confidence));
+  const best = primaryCandidates.filter((candidate) => candidate.confidence === bestConfidence);
+  const values = new Set(best.map((candidate) => `${candidate.price}|${candidate.currency}|${candidate.stockStatus}`));
+  return values.size > 1;
+}
+
 export const shopifyAdapter: RetailerAdapter = {
   id: 'shopify',
-  version: '1.1.0',
+  version: '1.2.0',
   priority: 60,
   canHandle(artifact) {
     const host = hostnameOf(artifact.finalUrl);
@@ -171,10 +159,13 @@ export const shopifyAdapter: RetailerAdapter = {
       ...withProvenance(candidate, shopifyAdapter, 'script[type="application/ld+json"]'),
       confidence: Math.max(candidate.confidence, 0.97),
     }));
-    return [...direct, ...jsonLd, ...openGraphCandidate(artifact.html, shopifyAdapter)];
+    // OpenGraph price is intentionally not a standalone observation candidate. On
+    // variant-bearing Shopify pages it can represent a low/default variant and
+    // previously caused a confidently wrong product-level observation.
+    return [...direct, ...jsonLd];
   },
   supplementaryRequests(artifact, primaryCandidates): SupplementaryRequest[] {
-    if (primaryCandidates.length) return [];
+    if (!needsSupplementaryEvidence(primaryCandidates)) return [];
     const urls = ajaxUrls(artifact.finalUrl);
     if (!urls) return [];
     const requests: SupplementaryRequest[] = [{
