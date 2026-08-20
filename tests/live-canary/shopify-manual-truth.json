@@ -1,14 +1,148 @@
 {
   "gymshark-power-shirt": {
+    "expectation": "OBSERVATION",
     "visiblePrice": 25.2,
     "currency": "USD",
-    "verifiedAt": "2026-08-20T05:34:00Z",
-    "note": "Same-day manual/web review retained from the accepted Gymshark reliability loop. Refresh before using after the 24-hour truth window."
+    "verifiedAt": "2026-08-20T16:47:26Z",
+    "note": "Browser truth audit run 32393840486 / artifact 9415908544. Visible product state shows $25.20 USD."
   },
   "gymshark-pocket-leggings": {
+    "expectation": "OBSERVATION",
     "visiblePrice": 49.5,
     "currency": "USD",
-    "verifiedAt": "2026-08-20T05:34:00Z",
-    "note": "Same-day manual/web review retained from the accepted Gymshark reliability loop. Refresh before using after the 24-hour truth window."
+    "verifiedAt": "2026-08-20T16:47:26Z",
+    "note": "Browser truth audit run 32393840486 / artifact 9415908544. Visible product state shows US$49.50."
+  },
+  "mollyjogger-scrimshaw-kit": {
+    "expectation": "ABSTAIN_VARIANT_AMBIGUITY",
+    "variantPrices": [52, 54],
+    "currency": "USD",
+    "reason": "Multiple live knife configurations have different prices and the URL does not identify a variant.",
+    "verifiedAt": "2026-08-20T16:47:26Z",
+    "note": "Browser controls show live $52 and $54 configurations; discontinued Sunfish is excluded."
+  },
+  "mollyjogger-fish-knife": {
+    "expectation": "ABSTAIN_VARIANT_AMBIGUITY",
+    "variantPrices": [14.98, 28.5],
+    "currency": "USD",
+    "reason": "Multiple live knife/gift-set configurations have different prices and the URL does not identify a variant.",
+    "verifiedAt": "2026-08-20T16:47:26Z",
+    "note": "Browser controls show live $14.98 and $28.50 configurations."
+  },
+  "mollyjogger-red-plaid-cap": {
+    "expectation": "OBSERVATION",
+    "visiblePrice": 49.5,
+    "currency": "USD",
+    "expectedVariant": "Default Red Plaid size selection",
+    "verifiedAt": "2026-08-20T16:47:26Z",
+    "note": "Targeted browser probes show Small, Medium, and XLarge all remain $49.50."
+  },
+  "mollyjogger-stag-matches": {
+    "expectation": "OBSERVATION",
+    "visiblePrice": 10,
+    "currency": "USD",
+    "expectedVariant": "Stag 2pk (rectangular)",
+    "verifiedAt": "2026-08-20T16:47:26Z",
+    "note": "Default/live state is $10.00. The alternate set renders $11.50 when selected but the underlying Shopify variant control marks it Sold Out, so unavailable historical variation does not justify abstaining from the live/default observation."
+  },
+  "dowse-ice-cream-cup": {
+    "expectation": "UNAVAILABLE",
+    "reason": "The requested product URL returns HTTP 404 and renders a 404 Page Not Found state.",
+    "verifiedAt": "2026-08-20T16:47:26Z",
+    "note": "Confirmed in the independent browser truth audit."
+  },
+  "dowse-zero-japan-mugs": {
+    "expectation": "ABSTAIN_VARIANT_AMBIGUITY",
+    "variantPrices": [16.5, 18.5],
+    "currency": "GBP",
+    "reason": "Live Small and Tall mug variants have different prices and the URL does not identify a variant.",
+    "verifiedAt": "2026-08-20T16:47:26Z",
+    "note": "Targeted browser probes changed the visible product price from £16.50 for Small to £18.50 for Tall."
+  },
+  "dowse-japanese-serving-jar": {
+    "expectation": "OBSERVATION",
+    "visiblePrice": 15.95,
+    "currency": "GBP",
+    "expectedVariant": "Default Orange selection",
+    "verifiedAt": "2026-08-20T16:47:26Z",
+    "note": "Independent browser screenshot shows the default product state at £15.95."
+  },
+  "dowse-noodle-cup": {
+    "expectation": "OBSERVATION",
+    "visiblePrice": 26,
+    "currency": "GBP",
+    "verifiedAt": "2026-08-20T16:47:26Z",
+    "note": "Independent browser screenshot shows the single/default product state at £26.00."
+  },
+  "missboon-propagation-workshop": {
+    "expectation": "OBSERVATION",
+    "visiblePrice": 49.95,
+    "currency": "CAD",
+    "verifiedAt": "2026-08-20T16:47:26Z",
+    "note": "Browser verifier explicitly selected Shopify country CA before review; visible state shows $49.95 CAD."
+  },
+  "missboon-jungle-feed": {
+    "expectation": "OBSERVATION",
+    "visiblePrice": 7.95,
+    "currency": "CAD",
+    "verifiedAt": "2026-08-20T16:47:26Z",
+    "note": "Browser verifier explicitly selected Shopify country CA before review; visible state shows $7.95 CAD."
+  },
+  "missboon-scindapsus-mount-salak": {
+    "expectation": "OBSERVATION",
+    "visiblePrice": 14.95,
+    "currency": "CAD",
+    "expectedVariant": "4-inch live/default size",
+    "verifiedAt": "2026-08-20T16:47:26Z",
+    "note": "CA-localized browser state shows 4-inch at $14.95 CAD. The 6-inch control could not be activated in the targeted probe, so it is not treated as a second live price for product-level ambiguity."
+  },
+  "missboon-monstera-aurea": {
+    "expectation": "OBSERVATION",
+    "visiblePrice": 99.95,
+    "currency": "CAD",
+    "verifiedAt": "2026-08-20T16:47:26Z",
+    "note": "Browser verifier explicitly selected Shopify country CA before review; visible state shows $99.95 CAD."
+  },
+  "horne-desert-two-seater": {
+    "expectation": "OBSERVATION",
+    "visiblePrice": 2679,
+    "currency": "USD",
+    "verifiedAt": "2026-08-20T16:47:26Z",
+    "note": "Independent browser screenshot shows $2,679.00 USD."
+  },
+  "horne-desert-one-seater": {
+    "expectation": "OBSERVATION",
+    "visiblePrice": 1459,
+    "currency": "USD",
+    "verifiedAt": "2026-08-20T16:47:26Z",
+    "note": "Independent browser screenshot shows $1,459.00 USD."
+  },
+  "horne-evio-vase-h22": {
+    "expectation": "OBSERVATION",
+    "visiblePrice": 145,
+    "currency": "USD",
+    "verifiedAt": "2026-08-20T16:47:26Z",
+    "note": "Independent browser screenshot shows $145.00 USD."
+  },
+  "horne-evio-vase-h35": {
+    "expectation": "OBSERVATION",
+    "visiblePrice": 289,
+    "currency": "USD",
+    "verifiedAt": "2026-08-20T16:47:26Z",
+    "note": "Independent browser screenshot shows $289.00 USD."
+  },
+  "horne-orrith-napkin-rings": {
+    "expectation": "OBSERVATION",
+    "visiblePrice": 75,
+    "currency": "USD",
+    "verifiedAt": "2026-08-20T16:47:26Z",
+    "note": "Independent browser screenshot shows $75.00 USD."
+  },
+  "horne-sama-wooden-bin": {
+    "expectation": "OBSERVATION",
+    "visiblePrice": 195,
+    "currency": "USD",
+    "verifiedAt": "2026-08-20T16:47:26Z",
+    "note": "Independent browser screenshot shows $195.00 USD."
   }
 }
