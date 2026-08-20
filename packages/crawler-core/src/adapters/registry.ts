@@ -81,8 +81,9 @@ export async function extractWithAdapterSupplements(
   budget: SupplementaryBudget = defaultSupplementaryBudget,
 ): Promise<AdapterExtractionResult> {
   const primaryResult = extractWithAdapters(primary, adapters);
-  if (canSelect(primaryResult.candidates)) return primaryResult;
-
+  // Do not return merely because a primary candidate can be selected. A matched
+  // adapter may deliberately request bounded supplementary evidence to confirm a
+  // weak candidate or resolve a primary disagreement.
   const start = Date.now();
   let requestsUsed = 0;
   let bytesUsed = 0;
