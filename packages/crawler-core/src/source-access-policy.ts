@@ -21,15 +21,16 @@ export interface SourceAccessDecision {
  * Operational source-permission gate, separate from parser capability.
  *
  * Reviewed sources are governed by the version-controlled source registry.
- * Unmatched URLs preserve the existing generic-crawler behavior for now; new
- * retailer reliability programs should register source acceptability before
- * live measurement begins.
+ * Policy matching is method-aware so overlapping host namespaces do not depend
+ * on registry order. Unmatched URLs preserve the existing generic-crawler
+ * behavior for now; new retailer reliability programs should register source
+ * acceptability before live measurement begins.
  */
 export function evaluateAutomatedSourceAccess(
   url: string,
   method: SourceAccessMethod = 'PUBLIC_HTTP',
 ): SourceAccessDecision {
-  const policy = sourcePolicyForUrl(url);
+  const policy = sourcePolicyForUrl(url, method);
   if (!policy) return { allowed:true };
 
   if (policy.status === 'APPROVED' && policy.permittedMethods.includes(method)) {
