@@ -53,7 +53,7 @@ test('unapproved Best Buy source fails before network access and preserves verif
   const baseline: PriceObservation = {
     id:'obs_source_base', workspaceId:'ws_source', productId:'prod_source', competitorListingId:'listing_source',
     fetchedAt:baselineAt, verifiedAt:baselineAt, currency:'USD', price:199.99, stockStatus:'IN_STOCK',
-    sourceMethod:'FIXTURE', extractorVersion:'fixture-v1', confidence:1, crawlRunId:'run_source_base',
+    sourceMethod:'JSON_LD', extractorVersion:'fixture-v1', confidence:1, crawlRunId:'run_source_base',
   };
   assert.equal((await persistObservationAndEffects(pool, baseline)).inserted, true);
 
