@@ -32,7 +32,15 @@ export function createCrawlQueue(redisUrl?: string, queueName = CRAWL_QUEUE_NAME
 }
 
 export async function enqueueCrawl(queue: Queue<CrawlJobData>, data: CrawlJobData, options: JobsOptions = {}) {
-  return queue.add('crawl-listing', data, {
+  // Construct the persisted payload explicitly. Even an untyped caller cannot
+  // smuggle stale URL/product/market configuration into BullMQ.
+  const identity: CrawlJobData = {
+    workspaceId:data.workspaceId,
+    listingId:data.listingId,
+    crawlRunId:data.crawlRunId,
+    jobKey:data.jobKey,
+  };
+  return queue.add('crawl-listing', identity, {
     jobId: bullJobId(data.jobKey),
     attempts: 3,
     backoff: { type: 'exponential', delay: 250 },
