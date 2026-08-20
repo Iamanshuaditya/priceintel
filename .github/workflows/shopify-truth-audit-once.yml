@@ -27,7 +27,7 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
-      - name: Run bounded 20-URL browser truth audit
+      - name: Run bounded targeted 20-URL browser truth audit
         id: audit
         run: node --disable-warning=ExperimentalWarning --experimental-strip-types scripts/browser-truth-audit.ts --max-total-variant-probes 16 --max-audit-ms 720000 --max-probe-ms 1500 --max-page-navigation-ms 25000
       - name: Upload browser truth evidence
@@ -50,4 +50,4 @@ jobs:
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
-            -d "{\"state\":\"$STATE\",\"context\":\"priceintel/shopify-truth-audit\",\"description\":\"Bounded 20-URL browser truth audit: $STATE\",\"target_url\":\"$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID\"}"
+            -d "{\"state\":\"$STATE\",\"context\":\"priceintel/shopify-truth-audit\",\"description\":\"Bounded targeted 20-URL truth audit: $STATE\",\"target_url\":\"$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID\"}"
