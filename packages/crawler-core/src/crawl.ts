@@ -1,6 +1,6 @@
 import type { PriceObservation } from '../../domain/src/index.ts';
-import { extractWithAdapterSupplements, selectAdapterCandidate } from './adapters/registry.ts';
 import type { FetchArtifact, SupplementaryRequest } from './adapters/types.ts';
+import { executeExtractionPipeline, requireExtractionCandidate } from './extraction-pipeline.ts';
 
 export interface CrawlInput {
   workspaceId: string;
@@ -39,14 +39,14 @@ export async function crawlStructuredProduct(input: CrawlInput, fetchHtml: HtmlF
   const fetchedAt = input.now ?? new Date();
   const fetched = await fetchHtml(input.url);
   const primary = artifactFromFetch(input.url, fetchedAt, fetched);
-  const extraction = await extractWithAdapterSupplements(primary, async (request: SupplementaryRequest) => {
+  const pipeline = await executeExtractionPipeline(primary, async (request: SupplementaryRequest) => {
     const supplemental = await fetchHtml(request.url, {
       timeoutMs:request.timeoutMs,
       maxResponseBytes:request.maxBytes,
     });
     return artifactFromFetch(request.url, fetchedAt, supplemental);
   });
-  const candidate = selectAdapterCandidate(extraction.candidates);
+  const candidate = requireExtractionCandidate(pipeline);
   return {
     id: `obs_${input.crawlRunId}`,
     workspaceId: input.workspaceId,
