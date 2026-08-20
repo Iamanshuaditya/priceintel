@@ -56,6 +56,35 @@ export function chooseFallbackDecision(input: {
   return input.preferred ?? 'MANUAL_REVIEW';
 }
 
+function visibleDocumentText(html: string) {
+  return html
+    .replace(/<!--([\s\S]*?)-->/g, ' ')
+    .replace(/<(script|style|noscript|template|svg)\b[^>]*>[\s\S]*?<\/\1>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;|&#160;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function isLikelyChallengePage(input: {
+  status?: number;
+  finalUrl?: string;
+  html?: string;
+}) {
+  if (input.status && [401, 403, 407, 429].includes(input.status)) return true;
+  if (input.finalUrl) {
+    try {
+      if (/\/blocked(?:[/?#]|$)/i.test(new URL(input.finalUrl).pathname)) return true;
+    } catch {}
+  }
+
+  const visible = visibleDocumentText(input.html ?? '').slice(0, 100_000);
+  if (!visible) return false;
+  if (/verify you are human|robot or human|access denied|unusual traffic|automated access|complete (?:the )?security check|press and hold/i.test(visible)) return true;
+  return visible.length < 50_000 && /\bcaptcha\b/i.test(visible);
+}
+
 export function truthSummary(evaluations: TruthEvaluation[]) {
   const fresh = evaluations.filter((item) => item.fresh);
   const extracted = fresh.filter((item) => item.extracted);
