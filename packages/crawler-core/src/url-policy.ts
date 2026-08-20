@@ -1,7 +1,7 @@
 import dns from 'node:dns/promises';
 import http from 'node:http';
 import https from 'node:https';
-import net from 'node:net';
+import net, { type LookupFunction } from 'node:net';
 import type { IncomingMessage } from 'node:http';
 
 export class UnsafeTargetError extends Error {
@@ -122,6 +122,18 @@ function assertPeerAddress(remoteAddress: string | undefined, approvedAddresses:
   if (!approved.has(normalizedRemote)) throw new UnsafeTargetError('PEER_ADDRESS_MISMATCH', 'Connected peer does not match the validated DNS result');
 }
 
+export function createPinnedLookup(address: string): LookupFunction {
+  const family = net.isIP(address);
+  if (family !== 4 && family !== 6) throw new UnsafeTargetError('INVALID_APPROVED_IP', 'Pinned lookup requires a valid IP address');
+  return (_hostname, options, callback) => {
+    if (options.all) {
+      callback(null, [{ address, family }]);
+      return;
+    }
+    callback(null, address, family);
+  };
+}
+
 async function requestPinnedAddress(input: PinnedTransportInput, address: string): Promise<FetchLikeResponse> {
   return await new Promise<FetchLikeResponse>((resolve, reject) => {
     const isHttps = input.url.protocol === 'https:';
@@ -136,7 +148,9 @@ async function requestPinnedAddress(input: PinnedTransportInput, address: string
       headers: { host: input.url.host, 'user-agent': 'PriceIntel/0.1 (+crawler)' },
       servername: isHttps ? input.url.hostname : undefined,
       agent: false,
-      lookup: (_hostname, _options, callback) => callback(null, address, family),
+      family,
+      autoSelectFamily: false,
+      lookup: createPinnedLookup(address),
       signal: input.signal,
     }, (message) => {
       try { assertPeerAddress(message.socket.remoteAddress, input.approvedAddresses); }
