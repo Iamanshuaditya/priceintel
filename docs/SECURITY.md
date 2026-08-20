@@ -19,6 +19,31 @@ The HTTP transport model is:
 
 Production should still combine this application-layer policy with deployment egress controls.
 
+### Source-permission boundary
+
+Source permission is intentionally separate from parser capability and from SSRF safety.
+
+`secureFetch()` accepts a generic `authorizeTarget(url)` callback. Production worker HTTP fetches and the scheduled/manual reliability canary pass `assertAutomatedSourceAccess()` into that callback.
+
+The callback runs before DNS resolution and before transport on **every concrete HTTP hop**, not only the original listing URL:
+
+`authorize -> resolve/SSRF-check -> pinned request -> redirect -> authorize -> resolve/SSRF-check -> pinned request`
+
+This closes the case where an approved origin redirects to a source that PriceIntel has classified as unapproved. The approved origin may have received the first request; the denied redirect destination receives no DNS resolution and no transport call.
+
+Supplementary adapter artifacts use the same production `HtmlFetcher`, so a supplementary request cannot bypass the source decision through a redirect either.
+
+The worker retains a higher-level direct listing preflight as defense-in-depth. The transport callback is the lower-level invariant that protects redirects and supplementary network paths.
+
+Best Buy is currently the first explicit failed-closed source policy: `bestbuy.com` and subdomains produce `SOURCE_NOT_APPROVED` / `MANUAL_REVIEW` pending an appropriate written/licensed source permission. This is an operational engineering policy, not a broad legal conclusion.
+
+Accepted regressions prove:
+
+- direct Best Buy is rejected before DNS/transport;
+- approved origin -> Best Buy redirect never contacts Best Buy;
+- Shopify supplementary request -> Best Buy redirect is blocked and surfaced as `SOURCE_NOT_APPROVED`;
+- approved -> approved redirects remain functional.
+
 ### Tenant/auth boundary
 
 - Passwords are salted scrypt hashes.
@@ -117,4 +142,5 @@ Explicit retailer challenge pages remain `BLOCKED`; production browser fallback 
 - CSV/formula-injection controls if CSV export/import is added;
 - evidence retention/redaction controls before storing substantial HTML/screenshots/headers;
 - production proxy credential/session isolation if retailer proxies are introduced;
-- retailer-specific market selection controls beyond the current fail-closed expected-currency invariant.
+- retailer-specific market selection controls beyond the current fail-closed expected-currency invariant;
+- durable source-governance metadata/evidence registry for multi-retailer review lifecycle.
