@@ -254,6 +254,7 @@ function summarize(attempts: AttemptResult[]) {
 }
 
 function markdown(runAt: string, summary: ReturnType<typeof summarize>, attempts: AttemptResult[]) {
+  const observationCoverage = summary.observationTruthCoveragePct === null ? 'N/A' : `${summary.observationTruthCoveragePct}%`;
   const priceCorrectness = summary.observationPriceCorrectnessPct === null ? 'N/A' : `${summary.observationPriceCorrectnessPct}%`;
   const abstentionAccuracy = summary.abstentionAccuracyPct === null ? 'N/A' : `${summary.abstentionAccuracyPct}%`;
   const overallAccuracy = summary.overallDecisionAccuracyPct === null ? 'N/A' : `${summary.overallDecisionAccuracyPct}%`;
@@ -275,7 +276,8 @@ function markdown(runAt: string, summary: ReturnType<typeof summarize>, attempts
     '',
     `- Fresh decision truth samples: **${summary.freshDecisionTruthSamples}**`,
     `- Expected observations: **${summary.expectedObservations}**`,
-    `- Correct observations: **${summary.correctObservations}/${summary.expectedObservations}**`,
+    `- Observation truth coverage: **${summary.producedObservations}/${summary.expectedObservations} (${observationCoverage})**`,
+    `- Correct observation prices: **${summary.correctObservationPrices}/${summary.producedObservations}**`,
     `- Observation price correctness: **${priceCorrectness}**`,
     `- Expected variant abstentions: **${summary.expectedAbstentions}**`,
     `- Correct abstentions: **${summary.correctAbstentions}/${summary.expectedAbstentions}**`,
