@@ -1,6 +1,7 @@
 import type { Pool } from 'pg';
 import type { Job } from 'bullmq';
 import { crawlStructuredProduct, type HtmlFetcher } from '../../crawler-core/src/crawl.ts';
+import { assertAutomatedSourceAccess } from '../../crawler-core/src/source-access-policy.ts';
 import {
   claimCrawlRun,
   loadCrawlListingConfig,
@@ -14,7 +15,7 @@ export interface ProcessorHooks {
 }
 
 function failureHealth(code: string) {
-  if (code === 'MARKET_MISMATCH') return 'NEEDS_REVIEW' as const;
+  if (code === 'MARKET_MISMATCH' || code === 'SOURCE_NOT_APPROVED') return 'NEEDS_REVIEW' as const;
   if (code === 'PARSE_FAILED' || code === 'CANDIDATE_DISAGREEMENT') return 'PARSE_FAILED' as const;
   return 'DEGRADED' as const;
 }
@@ -30,6 +31,11 @@ export function buildCrawlProcessor(pool: Pool, fetchHtml: HtmlFetcher, hooks: P
       // BullMQ carries only durable crawl identity. PostgreSQL is authoritative for
       // the product/listing URL and market contract at the moment the worker runs.
       const listing = await loadCrawlListingConfig(pool, data.workspaceId, data.listingId);
+
+      // Parser capability is not source permission. Fail closed before network
+      // access when the current operational source policy requires approval.
+      assertAutomatedSourceAccess(listing.url);
+
       const observation = await crawlStructuredProduct({
         workspaceId:data.workspaceId,
         productId:listing.productId,
