@@ -2,9 +2,9 @@
 
 Review date: **2026-08-21**
 
-Status: **SOURCE_NOT_APPROVED / MANUAL_REVIEW**
+Status: **SOURCE_NOT_APPROVED / MANUAL_REVIEW — engineering frozen pending approved source**
 
-This is an engineering/source-governance decision for PriceIntel, not legal advice. It records why the current code must fail closed before automated Best Buy network access until an appropriate written/licensed source permission exists.
+This is an engineering/source-governance decision for PriceIntel, not legal advice. It records why the current code fails closed before automated Best Buy network access until an appropriate written/licensed source permission exists.
 
 ## Technical capability is not the blocker
 
@@ -38,7 +38,7 @@ Official site terms:
 
 The version reviewed is identified by Best Buy as last updated October 1, 2025. It restricts copying/scraping site Content and restricts automated engines/tools/agents used to navigate or search Best Buy Properties other than Best Buy-provided search agents and generally publicly available browsers.
 
-PriceIntel therefore must not treat ordinary automated BestBuy.com HTTP/browser crawling as the fallback when the public API is commercially unsuitable.
+PriceIntel therefore does not treat ordinary automated BestBuy.com HTTP/browser crawling as the fallback when the public API is commercially unsuitable.
 
 ## Affiliate / Creator route
 
@@ -64,7 +64,7 @@ This route is not currently a suitable source for the monitoring product.
 
 ## Enforced code policy
 
-PriceIntel now separates parser capability from source permission through `evaluateAutomatedSourceAccess()` / `assertAutomatedSourceAccess()`.
+PriceIntel separates parser capability from source permission through `evaluateAutomatedSourceAccess()` / `assertAutomatedSourceAccess()`.
 
 For `bestbuy.com` and subdomains the default operational decision is:
 
@@ -74,9 +74,66 @@ code          SOURCE_NOT_APPROVED
 next action   MANUAL_REVIEW
 ```
 
-Production workers evaluate this policy **after loading the current listing from PostgreSQL but before any HTTP fetch**.
+Production workers load the current listing configuration from PostgreSQL and perform a direct source preflight before crawl execution. In addition, the production HTTP transport now receives `assertAutomatedSourceAccess` as a generic per-hop authorization callback.
 
-A Best Buy attempt therefore produces:
+`secureFetch()` invokes the callback **before DNS resolution and before transport for every concrete network hop**:
+
+```text
+initial URL
+→ source authorization
+→ DNS / SSRF validation
+→ pinned request
+
+redirect URL
+→ source authorization
+→ DNS / SSRF validation
+→ pinned request
+```
+
+Supplementary adapter artifacts use the same production `HtmlFetcher`, so redirects from supplementary requests cross the same permission boundary.
+
+The scheduled/manual reliability canary passes the same authorization callback into `secureFetch()`. Its higher-level initial preflight remains defense-in-depth; live measurement cannot use a redirect to bypass the source decision.
+
+## Accepted verification
+
+### Direct Best Buy zero-network gate
+
+Commit `30b4eae2021f320cf54056bb9c544d03bcff6f9d` passed the full hardening gate in GitHub Actions run `32420516534`.
+
+The Postgres/Redis/BullMQ integration regression proves:
+
+```text
+BestBuy.com listing
+→ PostgreSQL config reload
+→ source permission preflight
+→ SOURCE_NOT_APPROVED
+→ HTTP fetch calls = 0
+→ historical verified observation preserved
+→ no change event
+→ no outbox
+→ NEEDS_REVIEW
+```
+
+It explicitly asserts one retained `$199.99 USD` observation, zero changes/outbox, unchanged verified current state, `SOURCE_NOT_APPROVED`, and zero fetcher calls.
+
+The immediately preceding red run was compiler-only: the new baseline fixture used unsupported provenance `FIXTURE`. The only fix was changing that fixture to the existing valid `JSON_LD` source method; the behavioral assertions were unchanged.
+
+### Per-hop redirect/supplement authorization
+
+Commit `945e0b15e5787973cf983fba64487fd074f571d7` passed the full hardening gate in GitHub Actions run `32421412905`.
+
+The transport regressions prove:
+
+1. direct Best Buy is denied before both DNS and transport;
+2. an approved URL may issue its first request, but a redirect to Best Buy is denied before Best Buy DNS/transport;
+3. a Shopify supplementary request that redirects to Best Buy records `SOURCE_NOT_APPROVED` and never contacts the Best Buy destination;
+4. approved-to-approved redirects continue normally.
+
+An intermediate hardening run `32421300251` failed strict TypeScript because the generic target-authorizer callback was initially typed to return only `void`, while `assertAutomatedSourceAccess()` returns its successful decision object. The callback contract was corrected to ignore arbitrary successful return values; no behavioral assertion changed.
+
+## Failure semantics
+
+A direct Best Buy production attempt therefore produces:
 
 ```text
 network request          NO
@@ -90,7 +147,7 @@ failure code             SOURCE_NOT_APPROVED
 health                   NEEDS_REVIEW
 ```
 
-The scheduled/manual reliability canary applies the same preflight before live fetch, so measurement does not continue accessing an unapproved source merely because a deterministic parser exists.
+A redirect from an otherwise approved source may have already contacted the approved origin, but the unapproved redirect destination receives **no DNS resolution or transport request** after the source callback rejects it.
 
 Deterministic Best Buy adapter fixtures remain useful for parser development and for a future explicitly approved source contract; they are not permission to run the adapter against the live retailer.
 
@@ -102,15 +159,22 @@ Any production Best Buy reliability program now needs one of these before live a
 2. an approved/licensed Best Buy data arrangement whose license explicitly permits this use;
 3. a third-party commercial data source whose own rights/license cover redistribution/use for competitor-price intelligence and whose provenance/reliability can be verified.
 
-A proxy, browser, CAPTCHA-solving service, search-result cache, or scraping vendor does **not** by itself solve source permission.
+A proxy, browser, CAPTCHA-solving service, search-result cache, affiliate account, or scraping vendor does **not** by itself solve source permission.
 
-## Next engineering action
+For a third-party provider, "sells Best Buy data" is insufficient. Source acceptance must verify the provider's rights for the intended competitor-monitoring/derived-analytics use and any redistribution or retention needed by PriceIntel.
 
-Until an approved source exists, Best Buy reliability should measure the source state itself:
+## Frozen engineering boundary
 
-- production attempt classification: `SOURCE_NOT_APPROVED`;
-- next action: `MANUAL_REVIEW` / commercial-source or written-permission investigation;
-- deterministic parser tests: remain green but dormant;
-- live BestBuy.com canary fetches: disabled by source policy.
+Best Buy engineering is now intentionally frozen until an acceptable source exists.
 
-Once an acceptable source exists, create a new explicit source contract and reopen the Best Buy corpus measurement loop without weakening this gate.
+Do not add:
+
+- proxy rotation;
+- CAPTCHA solving;
+- browser fallback intended to bypass source restrictions;
+- alternate scraping tricks;
+- affiliate-account workarounds.
+
+The next Best Buy work is commercial/source research. Once an acceptable source exists, add it as a new explicit source contract, record the permission basis/evidence, then reopen deterministic source tests and a bounded Best Buy truth corpus.
+
+A future generalized source registry should carry governance metadata such as status, permission basis, review date, evidence reference, and review/expiry date. That is a cross-retailer governance improvement, not a reason to continue Best Buy crawler engineering now.
