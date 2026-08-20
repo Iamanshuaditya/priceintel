@@ -58,6 +58,7 @@ export interface SupplementaryAttempt {
 export interface AdapterExtractionResult {
   candidates: AdapterCandidate[];
   attempts: AdapterAttempt[];
+  primaryCandidateCount: number;
   supplementaryAttempts?: SupplementaryAttempt[];
 }
 
