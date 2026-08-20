@@ -3,13 +3,24 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "workspaces": ["apps/*", "packages/*"],
-  "engines": {"node": ">=22.6"},
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.6"
+  },
   "scripts": {
     "test": "node --disable-warning=ExperimentalWarning --experimental-strip-types --test tests/*.test.ts packages/*/test/*.test.ts",
     "test:security": "node --disable-warning=ExperimentalWarning --experimental-strip-types --test packages/crawler-core/test/url-policy.test.ts",
     "test:vertical": "node --disable-warning=ExperimentalWarning --experimental-strip-types --test tests/vertical-slice.test.ts",
     "fixture": "node --disable-warning=ExperimentalWarning --experimental-strip-types apps/fixture-server/src/main.ts",
-    "demo": "node --disable-warning=ExperimentalWarning --experimental-strip-types scripts/demo-first-slice.ts"
+    "demo": "node --disable-warning=ExperimentalWarning --experimental-strip-types scripts/demo-first-slice.ts",
+    "db:migrate": "node --disable-warning=ExperimentalWarning --experimental-strip-types scripts/migrate.ts",
+    "test:integration": "node --disable-warning=ExperimentalWarning --experimental-strip-types --test --test-concurrency=1 tests/integration/*.test.ts"
+  },
+  "dependencies": {
+    "bullmq": "6.1.1",
+    "pg": "8.23.0"
   }
 }
