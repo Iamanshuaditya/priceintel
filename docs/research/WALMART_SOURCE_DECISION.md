@@ -38,6 +38,8 @@ Official developer material reviewed:
 - https://developer.walmart.com/us-marketplace/docs/get-pricing-insights
 - https://developer.walmart.com/us-marketplace/docs/pricing-overview
 - https://developer.walmart.com/us-marketplace/reference/getsearchresult
+- https://developer.walmart.com/us-marketplace/docs/get-started-as-a-solution-provider
+- https://developer.walmart.com/us-marketplace/docs/api-scope-walmart-marketplace
 
 The current Walmart Marketplace API license is oriented around Developer Applications that provide offerings to or on behalf of Walmart Suppliers/Sellers. It restricts reuse and commercial exploitation of Walmart Data outside the approved purposes and requires the Developer to operate within the supplier/seller relationship and applicable onboarding/authorization.
 
@@ -45,22 +47,28 @@ Technically, the Marketplace APIs are highly relevant:
 
 - Pricing APIs can retrieve/manage prices for a seller's Walmart catalog.
 - Pricing Insights can expose current item price, Buy Box pricing, competitive pricing information, repricer details, and competitiveness signals **for the seller's items**.
-- Item Search can query Walmart's catalog so a seller can decide whether to sell an item.
+- Item Search can query Walmart's catalog so a seller can decide whether to sell this item.
 
 Those capabilities do not automatically establish that PriceIntel may use Marketplace credentials as a general-purpose Walmart competitor-price feed for arbitrary third-party listings.
 
-There is, however, a narrower plausible product route: PriceIntel could potentially operate as an approved solution provider for Walmart sellers and use authorized Marketplace data **within that seller-scoped workflow** if Walmart onboarding, seller authorization, and the applicable agreement clearly permit the intended feature.
+### Formal solution-provider route exists
 
-Because that narrower route could be materially different from public-web collection, it is not classified as `NOT_APPROVED`. It remains:
+Walmart documents a formal US solution-provider program. A company can apply to become an approved Solution Provider, receive sandbox access after approval, implement OAuth 2.0, register an application for the Seller Center App Store, pass Walmart verification, and then allow Walmart sellers to authorize that application.
+
+The OAuth scope documentation further describes seller-visible scopes and requires approved Solution Providers to request only the access needed for the integration.
+
+That is materially different from anonymous public-web collection. It gives PriceIntel a plausible **seller-authorized product direction**, but it still does not establish that the exact competitor-intelligence feature PriceIntel wants is permitted under the agreement or available under the necessary API scopes.
+
+Therefore the Marketplace API remains `REVIEW_REQUIRED`, not `APPROVED` and not blanket `NOT_APPROVED`:
 
 ```text
 sourceId      WALMART_MARKETPLACE_API
 status        REVIEW_REQUIRED
 method        RETAILER_API
-next action   verify solution-provider/seller-scoped rights and onboarding
+next action   verify solution-provider approval, seller consent, scopes, and permitted use
 ```
 
-No API calls should be made by PriceIntel until that review is complete and the access contract is intentionally changed.
+No production Marketplace API calls should be made until that review is complete and the access contract is intentionally changed.
 
 ## Affiliate / Creator data
 
@@ -109,7 +117,7 @@ The worker currently uses the public-HTTP authorizer for listing crawls, so Walm
 Reopen a Walmart technical source experiment only after one of these is established:
 
 1. express Walmart permission for PriceIntel's intended automated competitor-price use;
-2. approved Walmart solution-provider/seller authorization with terms that cover the specific PriceIntel seller-scoped feature;
+2. approved Walmart solution-provider status plus seller authorization/scopes and terms that cover the specific PriceIntel feature;
 3. a licensed third-party provider whose rights explicitly cover the required Walmart price data, retention, derived analytics, and customer use.
 
 A proxy, CAPTCHA solver, browser automation, affiliate account, or vendor that merely claims to scrape Walmart does not establish source approval.
