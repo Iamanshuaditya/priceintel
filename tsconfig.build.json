@@ -8,5 +8,5 @@
     "declaration": true,
     "declarationMap": true
   },
-  "exclude": ["dist", "node_modules", "**/*.test.ts", "tests/**"]
+  "exclude": ["dist", "node_modules", "**/*.test.ts", "tests/**", "e2e/**", "playwright.config.ts"]
 }
