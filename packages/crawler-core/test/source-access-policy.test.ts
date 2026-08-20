@@ -41,7 +41,9 @@ test('source governance registry has unique reviewed records with evidence', () 
   assert.equal(sourcePolicyForUrl('https://images.bestbuy.com/example')?.sourceId, 'BESTBUY_PUBLIC_WEB');
   assert.equal(sourcePolicyForUrl('https://www.walmart.com/ip/123')?.sourceId, 'WALMART_PUBLIC_WEB');
   assert.equal(sourcePolicyForUrl('https://www.target.com/p/example/-/A-123')?.sourceId, 'TARGET_PUBLIC_WEB');
+  assert.equal(sourcePolicyForUrl('https://www.homedepot.com/p/example/123')?.sourceId, 'HOME_DEPOT_PUBLIC_WEB');
   assert.equal(sourcePolicyForId('TARGET_PLUS_API'), undefined, 'Target Plus API must not get a runtime record until its actual endpoint/scope is verified');
+  assert.equal(sourcePolicyForId('HOME_DEPOT_SUPPLIER_PARTNER_DATA'), undefined, 'Home Depot supplier data must not get a runtime record until an actual permitted interface/endpoint is verified');
 });
 
 test('Best Buy public web is failed closed pending an approved source agreement', () => {
@@ -90,6 +92,17 @@ test('Target public web is not approved and Target Plus endpoint is intentionall
   assert.equal(publicWeb.nextAction, 'MANUAL_REVIEW');
   assert.equal(publicWeb.evidenceReference, 'docs/research/TARGET_SOURCE_DECISION.md');
   assert.equal(sourcePolicyForId('TARGET_PLUS_API'), undefined);
+});
+
+test('Home Depot public web is not approved and supplier partner interface is intentionally unrouted', () => {
+  const publicWeb = evaluateAutomatedSourceAccess('https://www.homedepot.com/p/example/123');
+  assert.equal(publicWeb.allowed, false);
+  assert.equal(publicWeb.sourceId, 'HOME_DEPOT_PUBLIC_WEB');
+  assert.equal(publicWeb.status, 'NOT_APPROVED');
+  assert.equal(publicWeb.code, 'SOURCE_NOT_APPROVED');
+  assert.equal(publicWeb.nextAction, 'MANUAL_REVIEW');
+  assert.equal(publicWeb.evidenceReference, 'docs/research/HOME_DEPOT_SOURCE_DECISION.md');
+  assert.equal(sourcePolicyForId('HOME_DEPOT_SUPPLIER_PARTNER_DATA'), undefined);
 });
 
 test('source approval gate does not block unrelated retailers', () => {
@@ -146,6 +159,24 @@ test('Target public web is rejected before DNS or transport', async () => {
   );
   assert.equal(resolverCalls, 0, 'Target policy must run before DNS');
   assert.equal(transportCalls, 0, 'Target public web must never reach transport');
+});
+
+test('Home Depot public web is rejected before DNS or transport', async () => {
+  let resolverCalls = 0;
+  let transportCalls = 0;
+  await assert.rejects(
+    secureFetch('https://www.homedepot.com/p/example/123', {
+      authorizeTarget:assertAutomatedSourceAccess,
+      resolver:async () => { resolverCalls += 1; return [PUBLIC_IP]; },
+      transport:async () => { transportCalls += 1; return response(200); },
+    }),
+    (error: unknown) => {
+      const value = error as {code?:string;sourceId?:string};
+      return value.code === 'SOURCE_NOT_APPROVED' && value.sourceId === 'HOME_DEPOT_PUBLIC_WEB';
+    },
+  );
+  assert.equal(resolverCalls, 0, 'Home Depot policy must run before DNS');
+  assert.equal(transportCalls, 0, 'Home Depot public web must never reach transport');
 });
 
 test('allowed source redirecting to unapproved source never contacts redirect destination', async () => {
