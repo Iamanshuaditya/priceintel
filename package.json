@@ -18,6 +18,7 @@
     "test:vertical": "node --disable-warning=ExperimentalWarning --experimental-strip-types --test tests/vertical-slice.test.ts",
     "test:integration": "node --disable-warning=ExperimentalWarning --experimental-strip-types --test --test-concurrency=1 tests/integration/*.test.ts",
     "test:e2e": "playwright test",
+    "canary:live": "node --disable-warning=ExperimentalWarning --experimental-strip-types scripts/reliability-canary.ts",
     "fixture": "node --disable-warning=ExperimentalWarning --experimental-strip-types apps/fixture-server/src/main.ts",
     "demo": "node --disable-warning=ExperimentalWarning --experimental-strip-types scripts/demo-first-slice.ts",
     "db:migrate": "node --disable-warning=ExperimentalWarning --experimental-strip-types scripts/migrate.ts",

@@ -1,0 +1,36 @@
+name: live-canary
+on:
+  # Temporary work-branch trigger is used only to bootstrap/inspect the first real report.
+  # Remove it after the first accepted run; live retailer behavior must not become blocking PR CI.
+  push:
+    branches:
+      - "work/priceintel-foundation"
+  workflow_dispatch:
+  schedule:
+    - cron: "17 7 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  retailer-reliability:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Run non-blocking live retailer canary
+        run: npm run canary:live
+      - name: Upload reliability report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: priceintel-retailer-reliability-${{ github.sha }}
+          path: artifacts/reliability
+          if-no-files-found: ignore
+          retention-days: 30

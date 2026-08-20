@@ -1,0 +1,26 @@
+{
+  "gymshark-power-shirt": {
+    "visiblePrice": 25.2,
+    "currency": "USD",
+    "verifiedAt": "2026-08-20T05:34:00Z",
+    "note": "Seed manual/web review. Refresh before treating as current truth; retailer prices can legitimately change."
+  },
+  "gymshark-pocket-leggings": {
+    "visiblePrice": 49.5,
+    "currency": "USD",
+    "verifiedAt": "2026-08-20T05:34:00Z",
+    "note": "Seed manual/web review on row.gymshark.com. Refresh before treating as current truth."
+  },
+  "walmart-sony-xm5-black": {
+    "visiblePrice": 249.99,
+    "currency": "USD",
+    "verifiedAt": "2026-08-20T05:34:00Z",
+    "note": "Seed manual/web review for the black condition/default page. Refresh before using for correctness decisions."
+  },
+  "bestbuy-sony-xm5-black": {
+    "visiblePrice": 248,
+    "currency": "USD",
+    "verifiedAt": "2026-08-20T05:34:00Z",
+    "note": "Seed manual/web review. Best Buy pricing and geo presentation can change; refresh truth frequently."
+  }
+}
