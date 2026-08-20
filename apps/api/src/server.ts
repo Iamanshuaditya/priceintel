@@ -615,7 +615,8 @@ export function createApiServer(options: ApiServerOptions) {
       throw new HttpError(404, 'Route not found', 'NOT_FOUND');
     } catch (error) {
       if (error instanceof HttpError) {
-        const headers = error.retryAfterSeconds ? { 'retry-after':String(error.retryAfterSeconds) } : {};
+        const headers: Record<string,string> = {};
+        if (error.retryAfterSeconds) headers['retry-after'] = String(error.retryAfterSeconds);
         return json(res, error.status, { error:{ code:error.code,message:error.message } }, headers);
       }
       console.error('api_request_failed', error);
