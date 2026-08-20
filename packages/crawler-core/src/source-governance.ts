@@ -21,10 +21,15 @@ export interface SourcePolicy {
 /**
  * Version-controlled source-governance registry.
  *
- * A retailer/source enters this registry once PriceIntel has performed an
- * explicit source-acceptability review. Unmatched URLs preserve the existing
- * generic crawler behavior for now; new retailer reliability programs should
- * add a governed source record before live measurement begins.
+ * A retailer/source enters this runtime registry once PriceIntel has performed
+ * an explicit source-acceptability review AND has a verified hostname/address
+ * to govern. Unmatched URLs preserve the existing generic crawler behavior for
+ * now; new retailer reliability programs should add a governed source record
+ * before live measurement begins.
+ *
+ * Do not guess API hostnames merely to create a registry record. A reviewed
+ * integration surface may remain documented as REVIEW_REQUIRED until its real
+ * runtime endpoint and scope are verified.
  */
 export const sourcePolicies: readonly SourcePolicy[] = [
   {
@@ -59,6 +64,17 @@ export const sourcePolicies: readonly SourcePolicy[] = [
     reviewAfter:'2026-11-21',
     evidenceReference:'docs/research/WALMART_SOURCE_DECISION.md',
     reason:'Walmart Marketplace API access is seller/solution-provider scoped and requires use-case/onboarding review before PriceIntel can treat it as an approved competitor-intelligence source',
+  },
+  {
+    sourceId:'TARGET_PUBLIC_WEB',
+    hostnamePatterns:['target.com','*.target.com'],
+    status:'NOT_APPROVED',
+    permittedMethods:[],
+    basis:'PUBLIC_TERMS_REVIEW',
+    reviewedAt:'2026-08-21',
+    reviewAfter:'2026-11-21',
+    evidenceReference:'docs/research/TARGET_SOURCE_DECISION.md',
+    reason:'Target public-web product/price collection is not approved for PriceIntel automated commercial monitoring under the reviewed public terms',
   },
 ];
 
