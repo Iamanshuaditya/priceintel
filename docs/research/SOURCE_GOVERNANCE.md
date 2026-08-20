@@ -6,14 +6,14 @@ PriceIntel separates **technical capability** from **source approval**. A parser
 
 ## Registry
 
-Reviewed sources are recorded in the version-controlled registry:
+Reviewed runtime sources are recorded in the version-controlled registry:
 
 `packages/crawler-core/src/source-governance.ts`
 
-Each record contains:
+Each runtime record contains:
 
 - `sourceId`;
-- hostname patterns;
+- verified hostname patterns;
 - status: `APPROVED`, `NOT_APPROVED`, or `REVIEW_REQUIRED`;
 - permitted access methods;
 - permission/review basis;
@@ -22,6 +22,16 @@ Each record contains:
 - operational reason.
 
 The initial registry is intentionally version-controlled rather than database-managed so source-policy changes receive ordinary code review, deterministic tests, and immutable Git history.
+
+## Verified runtime addressing rule
+
+Do **not** guess a production API hostname merely to represent a governance conclusion.
+
+A source can be documented as conceptually `REVIEW_REQUIRED` while its actual runtime endpoint, scopes, or account context are still unknown. Such a source should not receive a URL-matching runtime registry record until the address and relevant access contract are verified.
+
+Target Plus is the first explicit example: public evidence establishes a seller/developer integration surface, so its source-review conclusion is `REVIEW_REQUIRED`, but the reviewed public material does not establish the production API hostname/scopes needed for safe runtime matching. `TARGET_PLUS_API` therefore remains documented but intentionally absent from `sourcePolicies` until those facts are verified.
+
+This prevents source governance from accidentally authorizing, denying, or probing an endpoint inferred from a portal hostname rather than an actual source contract.
 
 ## Access methods
 
@@ -38,7 +48,7 @@ An approved source must explicitly permit the method PriceIntel intends to use. 
 
 `evaluateAutomatedSourceAccess()` resolves reviewed URL hosts through the registry. `assertAutomatedSourceAccess()` converts a non-approved state into a fail-closed runtime error.
 
-For reviewed sources:
+For reviewed runtime sources:
 
 - `NOT_APPROVED` -> `SOURCE_NOT_APPROVED` / `MANUAL_REVIEW`;
 - `REVIEW_REQUIRED` -> `SOURCE_REVIEW_REQUIRED` / `MANUAL_REVIEW`;
@@ -91,10 +101,15 @@ A source decision should reference the material used for the operational review,
 
 ## Current governed sources
 
-As of 2026-08-21:
+As of 2026-08-21, runtime registry records are:
 
 - `BESTBUY_PUBLIC_WEB` — `NOT_APPROVED`;
 - `WALMART_PUBLIC_WEB` — `NOT_APPROVED`;
-- `WALMART_MARKETPLACE_API` — `REVIEW_REQUIRED`.
+- `WALMART_MARKETPLACE_API` — `REVIEW_REQUIRED`;
+- `TARGET_PUBLIC_WEB` — `NOT_APPROVED`.
 
-Best Buy parser capability remains dormant/tested while its live source is frozen. Walmart source decisions are documented separately in `docs/research/WALMART_SOURCE_DECISION.md`.
+Reviewed but intentionally not runtime-routed yet:
+
+- `TARGET_PLUS_API` — `REVIEW_REQUIRED`; exact production API hostname/scopes still need verification.
+
+Best Buy parser capability remains dormant/tested while its live source is frozen. Walmart and Target source decisions are documented separately in `docs/research/WALMART_SOURCE_DECISION.md` and `docs/research/TARGET_SOURCE_DECISION.md`.
