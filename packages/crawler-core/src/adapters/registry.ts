@@ -1,6 +1,7 @@
 import { selectValidatedCandidate } from '../jsonld.ts';
 import { bestBuyAdapter } from './bestbuy.ts';
 import { genericJsonLdAdapter } from './generic-jsonld.ts';
+import { gymsharkAdapter } from './gymshark.ts';
 import { shopifyAdapter } from './shopify.ts';
 import type {
   AdapterCandidate,
@@ -15,6 +16,7 @@ import { defaultSupplementaryBudget } from './types.ts';
 import { walmartAdapter } from './walmart.ts';
 
 export const defaultRetailerAdapters: RetailerAdapter[] = [
+  gymsharkAdapter,
   walmartAdapter,
   bestBuyAdapter,
   shopifyAdapter,

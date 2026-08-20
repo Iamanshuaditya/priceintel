@@ -3,15 +3,15 @@
     "id": "gymshark-power-shirt",
     "retailer": "Gymshark",
     "url": "https://www.gymshark.com/products/gymshark-power-t-shirt-ss-tops-blue-ss26",
-    "expectedAdapter": "shopify",
-    "preferredFallback": "SUPPLEMENTARY_HTTP"
+    "expectedAdapter": "gymshark",
+    "preferredFallback": "MANUAL_REVIEW"
   },
   {
     "id": "gymshark-pocket-leggings",
     "retailer": "Gymshark",
     "url": "https://row.gymshark.com/products/gymshark-pocket-leggings-leggings",
-    "expectedAdapter": "shopify",
-    "preferredFallback": "SUPPLEMENTARY_HTTP"
+    "expectedAdapter": "gymshark",
+    "preferredFallback": "MANUAL_REVIEW"
   },
   {
     "id": "walmart-sony-xm5-black",
