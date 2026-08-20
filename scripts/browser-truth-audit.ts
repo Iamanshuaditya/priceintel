@@ -53,6 +53,55 @@ async function applyShopifyCountry(page: Page, countryCode: string) {
   return submitted;
 }
 
+async function boundedVariantProbes(page: Page) {
+  const probes: Array<{kind:'select'|'radio';name:string;value:string;label:string;priceLines:string[]}> = [];
+  const variantSelects = page.locator('select[name="id"]');
+  const selectCount = Math.min(await variantSelects.count(), 2);
+  for (let selectIndex = 0; selectIndex < selectCount && probes.length < 10; selectIndex += 1) {
+    const select = variantSelects.nth(selectIndex);
+    const initialValue = await select.inputValue().catch(() => '');
+    const options = await select.locator('option').evaluateAll((items) => items.map((option) => ({
+      value:(option as HTMLOptionElement).value,
+      label:option.textContent?.replace(/\s+/g, ' ').trim() ?? '',
+      disabled:(option as HTMLOptionElement).disabled,
+    })));
+    for (const option of options) {
+      if (probes.length >= 10) break;
+      if (!option.value || option.disabled) continue;
+      await select.selectOption(option.value).catch(() => null);
+      await page.waitForTimeout(180);
+      const text = await page.locator('body').innerText({ timeout:3_000 }).catch(() => '');
+      probes.push({kind:'select',name:'id',value:option.value,label:option.label,priceLines:priceLines(text).slice(0, 10)});
+    }
+    if (initialValue) await select.selectOption(initialValue).catch(() => null);
+  }
+
+  const radioGroups = await page.locator('input[type="radio"]').evaluateAll((radios) => {
+    const groups = new Map<string, Array<{value:string;label:string;disabled:boolean}>>();
+    for (const radio of radios.slice(0, 40)) {
+      const input = radio as HTMLInputElement;
+      const name = input.name || 'radio';
+      const label = input.id ? document.querySelector(`label[for="${CSS.escape(input.id)}"]`)?.textContent?.replace(/\s+/g, ' ').trim() ?? '' : '';
+      const group = groups.get(name) ?? [];
+      group.push({value:input.value,label,disabled:input.disabled});
+      groups.set(name, group);
+    }
+    return [...groups.entries()].map(([name, options]) => ({name,options}));
+  });
+  for (const group of radioGroups) {
+    for (const option of group.options) {
+      if (probes.length >= 16) break;
+      if (!option.value || option.disabled) continue;
+      const radio = page.locator(`input[type="radio"][name=${JSON.stringify(group.name)}][value=${JSON.stringify(option.value)}]`).first();
+      await radio.check({ force:true }).catch(() => null);
+      await page.waitForTimeout(180);
+      const text = await page.locator('body').innerText({ timeout:3_000 }).catch(() => '');
+      probes.push({kind:'radio',name:group.name,value:option.value,label:option.label,priceLines:priceLines(text).slice(0, 10)});
+    }
+  }
+  return probes;
+}
+
 const corpusPath = arg('--corpus', 'tests/live-canary/shopify-truth-audit.json');
 const outputDir = arg('--output', 'artifacts/reliability/shopify-truth-audit');
 const corpus = JSON.parse(await readFile(corpusPath, 'utf8')) as AuditEntry[];
@@ -104,11 +153,13 @@ for (const entry of corpus) {
       name:radio.getAttribute('name') ?? '',
       value:(radio as HTMLInputElement).value,
       checked:(radio as HTMLInputElement).checked,
+      disabled:(radio as HTMLInputElement).disabled,
       ariaLabel:radio.getAttribute('aria-label') ?? '',
       label:radio.id ? document.querySelector(`label[for="${CSS.escape(radio.id)}"]`)?.textContent?.replace(/\s+/g, ' ').trim() ?? '' : '',
     })));
     const screenshot = `${outputDir}/screenshots/${entry.id}.png`;
     await page.screenshot({ path:screenshot, fullPage:false });
+    const variantProbes = await boundedVariantProbes(page);
     attempts.push({
       id:entry.id,
       requestedUrl:entry.url,
@@ -121,6 +172,7 @@ for (const entry of corpus) {
       priceLines:priceLines(bodyText),
       selectOptions,
       radioControls,
+      variantProbes,
       screenshot:`screenshots/${entry.id}.png`,
       durationMs:Date.now() - started,
     });
@@ -155,11 +207,12 @@ for (const attempt of attempts as Array<Record<string, unknown>>) {
     `- Price lines: ${JSON.stringify(attempt.priceLines ?? [])}`,
     `- Select controls: ${JSON.stringify(attempt.selectOptions ?? [])}`,
     `- Radio controls: ${JSON.stringify(attempt.radioControls ?? [])}`,
+    `- Variant probes: ${JSON.stringify(attempt.variantProbes ?? [])}`,
     `- Screenshot: ${attempt.screenshot ?? '—'}`,
     `- Error: ${attempt.error ?? '—'}`,
     '',
   );
 }
-markdown.push('> This browser run is an independent test oracle over fixed known URLs. Screenshots, visible page state, and verifier review establish truth; extracted priceLines/control metadata are supporting evidence only. Requested storefront country is applied only through the site\'s own Shopify localization form. It does not feed production observations and is not a production browser-fallback path.', '');
+markdown.push('> This browser run is an independent test oracle over fixed known URLs. Screenshots, visible page state, and verifier review establish truth; extracted priceLines/control/variant-probe metadata are supporting evidence only. Requested storefront country is applied only through the site\'s own Shopify localization form. Variant probing is capped and never feeds production observations. It is not a production browser-fallback path.', '');
 await writeFile(`${outputDir}/audit.md`, markdown.join('\n'));
 console.log(markdown.join('\n'));
